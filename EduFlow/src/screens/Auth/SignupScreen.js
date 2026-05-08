@@ -10,7 +10,7 @@ import { registerStudent } from '../../services/firebase';
 import { ArrowLeft, ChevronDown, Check, Eye, EyeOff } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 
-export default function SignupScreen({ onBack, onSignupComplete }) {
+export default function SignupScreen({ navigation, onBack, onSignupComplete }) {
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -169,11 +169,17 @@ export default function SignupScreen({ onBack, onSignupComplete }) {
   return (
     <LinearGradient colors={['#e2e8f0', '#cbd5e1', '#94a3b8']} style={styles.background}>
       <SafeAreaView style={{ flex: 1 }}>
-        <StatusBar style="dark" />
+        <StatusBar style="dark-content" />
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
             
-            <Pressable style={styles.backButton} onPress={onBack}>
+              <Pressable
+                style={styles.backButton}
+                onPress={() => {
+                  if (onBack) return onBack();
+                  if (navigation?.goBack) return navigation.goBack();
+                }}
+              >
               <ArrowLeft color="#4a616c" size={24} />
             </Pressable>
 

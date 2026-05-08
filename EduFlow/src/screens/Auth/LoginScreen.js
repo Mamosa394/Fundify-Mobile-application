@@ -167,8 +167,11 @@ export default function LoginScreen({ navigation }) {
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       
-      // Navigate to main app after login
-      navigation.replace('Main');
+      // App.js conditionally switches authenticated navigator based on auth state.
+      // navigation.replace('Main') can fail due to nested navigator routing.
+      
+      return;
+
 
     } catch (err) {
       console.log('Login error:', err?.code);
