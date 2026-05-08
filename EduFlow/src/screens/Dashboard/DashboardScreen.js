@@ -1,4 +1,11 @@
-import React, { useMemo, useState } from 'react';
+// src/screens/Dashboard/DashboardScreen.js
+
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+
 import {
   View,
   Text,
@@ -7,801 +14,1317 @@ import {
   Pressable,
   Dimensions,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
 
+import { BlurView } from 'expo-blur';
+
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+
 import * as Haptics from 'expo-haptics';
 
-import ScreenWrapper from '../../components/layout/ScreenWrapper';
-import BudgetGalaxy from '../../components/three/BudgetGalaxy';
+import {
+  Ionicons,
+} from '@expo/vector-icons';
+
+import {
+  SafeAreaView,
+} from 'react-native-safe-area-context';
+
+import NeuralCore from '../../components/three/NeuralCore';
+
+import {
+  getDashboardData,
+  calculateBudgetProgress,
+  calculateScholarshipUrgency,
+  calculateAcademicRisk,
+  calculateEngagementIntensity,
+} from '../../services/DashboardService';
 
 const { width } = Dimensions.get('window');
 
 const COLORS = {
-  background: '#C9D1D6',
+  bg: '#ECEFF1',
 
-  card: '#D9DEE2',
-  cardDark: '#748A98',
+  surface: 'rgba(255,255,255,0.62)',
 
-  border: 'rgba(255,255,255,0.5)',
+  surfaceStrong:
+    'rgba(255,255,255,0.78)',
 
-  text: '#2F3A40',
-  muted: '#6B7E89',
+  border:
+    'rgba(255,255,255,0.42)',
 
-  white: '#F8FAFC',
+  text: '#0A0A0A',
 
-  financial: '#738A98',
-  academic: '#8599A5',
-  scholarship: '#617987',
-  engagement: '#4B5F6A',
-};
+  muted: '#6B7280',
 
-const MOCK = {
-  financial: {
-    monthlyBudget: 2400,
-    spentToDate: 1375,
-  },
+  black: '#080808',
 
-  academic: {
-    gpa: 3.42,
-    attendancePct: 78,
-  },
+  cyan: '#7DD3FC',
 
-  scholarship: {
-    progressPct: 62,
-    nextDeadlineDays: 9,
-  },
+  violet: '#C4B5FD',
 
-  engagement: {
-    streakDays: 6,
-    nextBestAction: 'Submit missing documents',
-  },
+  pink: '#F9A8D4',
+
+  green: '#86EFAC',
+
+  orange: '#FDBA74',
 };
 
 function fmtMoney(n) {
-  return `M${n.toLocaleString()}`;
+  return `M${Number(n).toLocaleString()}`;
 }
 
 export default function DashboardScreen() {
-  const [activeWidget, setActiveWidget] = useState('financial');
+  const [loading, setLoading] =
+    useState(true);
 
-  const budgetLeft =
-    MOCK.financial.monthlyBudget -
-    MOCK.financial.spentToDate;
+  const [dashboard, setDashboard] =
+    useState(null);
 
-  const widgets = useMemo(() => {
-    return [
-      {
-        key: 'financial',
-        title: 'Financial Pulse',
-        value: `${fmtMoney(budgetLeft)} left`,
-        meta: 'Spent 57% this month',
-        icon: 'wallet-outline',
-        color: COLORS.financial,
-      },
+  const [activeWidget, setActiveWidget] =
+    useState('financial');
 
-      {
-        key: 'academic',
-        title: 'Academic Health',
-        value: `${MOCK.academic.gpa} GPA`,
-        meta: '78% attendance',
-        icon: 'book-outline',
-        color: COLORS.academic,
-      },
-
-      {
-        key: 'scholarship',
-        title: 'Scholarship Progress',
-        value: `${MOCK.scholarship.progressPct}%`,
-        meta: 'Deadline in 9 days',
-        icon: 'ribbon-outline',
-        color: COLORS.scholarship,
-      },
-
-      {
-        key: 'engagement',
-        title: 'Engagement',
-        value: `${MOCK.engagement.streakDays} day streak`,
-        meta: MOCK.engagement.nextBestAction,
-        icon: 'flame-outline',
-        color: COLORS.engagement,
-      },
-    ];
+  useEffect(() => {
+    loadDashboard();
   }, []);
 
-  const onSelectWidget = (key) => {
+  async function loadDashboard() {
+    try {
+      setLoading(true);
+
+      const data =
+        await getDashboardData();
+
+      setDashboard(data);
+    } catch (err) {
+      console.log(err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const metrics = useMemo(() => {
+    if (!dashboard) {
+      return {
+        budgetProgress: 0,
+        scholarshipUrgency: 0,
+        academicRisk: 0,
+        engagementIntensity: 0,
+      };
+    }
+
+    return {
+      budgetProgress:
+        calculateBudgetProgress(
+          dashboard.financial
+        ),
+
+      scholarshipUrgency:
+        calculateScholarshipUrgency(
+          dashboard.scholarship
+        ),
+
+      academicRisk:
+        calculateAcademicRisk(
+          dashboard.academic
+        ),
+
+      engagementIntensity:
+        calculateEngagementIntensity(
+          dashboard.engagement
+        ),
+    };
+  }, [dashboard]);
+
+  function onSelectWidget(key) {
     setActiveWidget(key);
 
     Haptics.impactAsync(
       Haptics.ImpactFeedbackStyle.Light
     ).catch(() => {});
-  };
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView
+        style={styles.loading}
+      >
+        <ActivityIndicator
+          size="large"
+          color="#111"
+        />
+
+        <Text style={styles.loadingText}>
+          Initializing Neural Core
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (!dashboard) {
+    return (
+      <SafeAreaView
+        style={styles.loading}
+      >
+        <Text>
+          Failed to load dashboard
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
+  const { profile } = dashboard;
+
+  const telemetry = [
+    {
+      key: 'academic',
+
+      label: 'ACADEMIC',
+
+      value:
+        dashboard.academic.gpa,
+
+      sub: 'Current GPA',
+
+      color: COLORS.violet,
+
+      icon: 'sparkles-outline',
+    },
+
+    {
+      key: 'financial',
+
+      label: 'BALANCE',
+
+      value: fmtMoney(
+        dashboard.financial
+          .monthlyBudget -
+          dashboard.financial
+            .spentToDate
+      ),
+
+      sub: 'Available funds',
+
+      color: COLORS.cyan,
+
+      icon: 'wallet-outline',
+    },
+
+    {
+      key: 'engagement',
+
+      label: 'ATTENDANCE',
+
+      value: `${dashboard.academic.attendancePct}%`,
+
+      sub: 'Live presence',
+
+      color: COLORS.green,
+
+      icon: 'pulse-outline',
+    },
+
+    {
+      key: 'scholarship',
+
+      label: 'DEADLINE',
+
+      value: `${dashboard.scholarship.nextDeadlineDays}d`,
+
+      sub: 'Submission window',
+
+      color: COLORS.pink,
+
+      icon: 'timer-outline',
+    },
+  ];
 
   return (
-    <ScreenWrapper>
-      <StatusBar barStyle="dark-content" />
+    <SafeAreaView style={styles.safe}>
+      <StatusBar
+        barStyle="dark-content"
+      />
 
-      {/* FIXES RANDOM WHITE MARGINS */}
-      <View style={styles.safeBackground}>
-        <LinearGradient
-          colors={['#C9D1D6', '#BCC6CC']}
-          style={styles.container}
-        >
-          <ScrollView
-            contentContainerStyle={styles.content}
-            showsVerticalScrollIndicator={false}
+      {/* AMBIENT LIGHT */}
+
+      <View style={styles.cyanGlow} />
+
+      <View style={styles.violetGlow} />
+
+      <View style={styles.greenGlow} />
+
+      <ScrollView
+        showsVerticalScrollIndicator={
+          false
+        }
+        contentContainerStyle={
+          styles.content
+        }
+      >
+        {/* TOP */}
+
+        <View style={styles.topBar}>
+          <View
+            style={styles.brandWrap}
           >
-            {/* HEADER */}
-            <View style={styles.header}>
-              <View>
-                <Text style={styles.logo}>EduFlow</Text>
+            <View
+              style={styles.brandDot}
+            />
 
-                <Text style={styles.subtitle}>
-                  Student Ecosystem
-                </Text>
-              </View>
+            <Text style={styles.brand}>
+              EDUFLOW
+            </Text>
+          </View>
 
-              <View style={styles.headerRight}>
-                <Pressable style={styles.iconBtn}>
-                  <Ionicons
-                    name="notifications-outline"
-                    size={22}
-                    color={COLORS.text}
-                  />
-                </Pressable>
+          <View
+            style={styles.topRight}
+          >
+            <View
+              style={styles.livePill}
+            >
+              <View
+                style={styles.liveDot}
+              />
 
-                <View style={styles.avatar} />
-              </View>
+              <Text
+                style={
+                  styles.liveText
+                }
+              >
+                LIVE
+              </Text>
             </View>
 
-            {/* HERO CARD */}
-            <View style={styles.heroCard}>
-              <BudgetGalaxy
-                mode={activeWidget}
-                budgetProgress={0.57}
-                scholarshipUrgency={0.6}
-                academicRisk={0.3}
-                engagement={0.4}
+            <View
+              style={styles.avatar}
+            >
+              <Text
+                style={
+                  styles.avatarText
+                }
+              >
+                {profile.name
+                  ?.split(' ')
+                  ?.map((n) => n[0])
+                  ?.join('')
+                  ?.slice(0, 2)
+                  ?.toUpperCase()}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* USER */}
+
+        <View style={styles.userRow}>
+          <View>
+            <Text style={styles.title}>
+              Welcome back,
+            </Text>
+
+            <Text style={styles.user}>
+              {profile.name}
+            </Text>
+          </View>
+
+          <View
+            style={styles.statusBlock}
+          >
+            <Text
+              style={
+                styles.statusLabel
+              }
+            >
+              SYSTEM STATUS
+            </Text>
+
+            <Text
+              style={
+                styles.statusValue
+              }
+            >
+              Stable
+            </Text>
+          </View>
+        </View>
+
+        {/* COMMAND CENTER */}
+
+        <BlurView
+          intensity={40}
+          tint="light"
+          style={styles.commandCard}
+        >
+          <LinearGradient
+            colors={[
+              'rgba(125,211,252,0.18)',
+              'rgba(196,181,253,0.08)',
+              'transparent',
+            ]}
+            style={styles.commandGlow}
+          />
+
+          <View
+            style={
+              styles.commandTop
+            }
+          >
+            <View style={{ flex: 1 }}>
+              <Text
+                style={
+                  styles.commandLabel
+                }
+              >
+                COMMAND CENTER
+              </Text>
+
+              <Text
+                style={
+                  styles.commandValue
+                }
+              >
+                {fmtMoney(
+                  dashboard
+                    .financial
+                    .monthlyBudget -
+                    dashboard
+                      .financial
+                      .spentToDate
+                )}
+              </Text>
+
+              <Text
+                style={
+                  styles.commandSub
+                }
+              >
+                Available monthly
+                balance
+              </Text>
+            </View>
+
+            <View
+              style={
+                styles.ringWrap
+              }
+            >
+              <View
+                style={
+                  styles.outerRing
+                }
+              />
+
+              <View
+                style={
+                  styles.middleRing
+                }
               />
 
               <LinearGradient
                 colors={[
-                  'transparent',
-                  'rgba(20,30,40,0.55)',
+                  COLORS.cyan,
+                  COLORS.violet,
                 ]}
-                style={styles.heroOverlay}
+                style={
+                  styles.coreRing
+                }
               />
+            </View>
+          </View>
 
-              <View style={styles.heroContent}>
-                <View style={styles.liveBadge}>
-                  <Text style={styles.liveBadgeText}>
-                    Live Intelligence
-                  </Text>
-                </View>
+          <View style={styles.graph}>
+            {[40, 58, 48, 74, 62, 88].map(
+              (h, i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.graphBar,
+                    {
+                      height: h,
+                    },
+                  ]}
+                />
+              )
+            )}
+          </View>
 
-                <Text style={styles.heroTitle}>
-                  Everything in orbit.
-                </Text>
+          <View
+            style={
+              styles.commandFooter
+            }
+          >
+            <View
+              style={
+                styles.footerMetric
+              }
+            >
+              <Text
+                style={
+                  styles.footerLabel
+                }
+              >
+                Spending
+              </Text>
 
-                <Text style={styles.heroSub}>
-                  Everything in sync.
-                </Text>
-
-                <View style={styles.pagination}>
-                  <View style={styles.pageActive} />
-                  <View style={styles.pageDot} />
-                  <View style={styles.pageDot} />
-                  <View style={styles.pageDot} />
-                </View>
-              </View>
+              <Text
+                style={
+                  styles.footerValue
+                }
+              >
+                Stable
+              </Text>
             </View>
 
-            {/* SYSTEM CARD */}
-            <View style={styles.systemCard}>
-              <View style={styles.systemLeft}>
-                <View style={styles.sparkle}>
-                  <Ionicons
-                    name="sparkles-outline"
-                    size={18}
-                    color={COLORS.white}
+            <View
+              style={
+                styles.footerMetric
+              }
+            >
+              <Text
+                style={
+                  styles.footerLabel
+                }
+              >
+                Academic
+              </Text>
+
+              <Text
+                style={
+                  styles.footerValue
+                }
+              >
+                Healthy
+              </Text>
+            </View>
+
+            <View
+              style={
+                styles.footerMetric
+              }
+            >
+              <Text
+                style={
+                  styles.footerLabel
+                }
+              >
+                Risk
+              </Text>
+
+              <Text
+                style={
+                  styles.footerValue
+                }
+              >
+                Low
+              </Text>
+            </View>
+          </View>
+        </BlurView>
+
+        {/* TELEMETRY */}
+
+        <View
+          style={styles.telemetryWrap}
+        >
+          {telemetry.map((item) => {
+            const active =
+              activeWidget ===
+              item.key;
+
+            return (
+              <Pressable
+                key={item.key}
+                onPress={() =>
+                  onSelectWidget(
+                    item.key
+                  )
+                }
+                style={[
+                  styles.telemetryCard,
+
+                  active && {
+                    borderColor:
+                      item.color,
+                    transform: [
+                      {
+                        translateY: -4,
+                      },
+                    ],
+                  },
+                ]}
+              >
+                <LinearGradient
+                  colors={[
+                    `${item.color}25`,
+                    'transparent',
+                  ]}
+                  style={
+                    styles.telemetryGradient
+                  }
+                />
+
+                <View
+                  style={
+                    styles.telemetryTop
+                  }
+                >
+                  <View
+                    style={[
+                      styles.iconWrap,
+                      {
+                        backgroundColor:
+                          `${item.color}20`,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name={item.icon}
+                      size={18}
+                      color={item.color}
+                    />
+                  </View>
+
+                  <View
+                    style={[
+                      styles.activeIndicator,
+                      {
+                        backgroundColor:
+                          item.color,
+                      },
+                    ]}
                   />
                 </View>
 
-                <View>
-                  <Text style={styles.systemTitle}>
-                    System Overview
-                  </Text>
+                <Text
+                  style={
+                    styles.telemetryValue
+                  }
+                >
+                  {item.value}
+                </Text>
 
-                  <Text style={styles.systemText}>
-                    Your ecosystem is running smoothly.
-                  </Text>
-                </View>
-              </View>
+                <Text
+                  style={
+                    styles.telemetryLabel
+                  }
+                >
+                  {item.label}
+                </Text>
 
-              <View style={styles.statusBadge}>
-                <View style={styles.statusDot} />
+                <Text
+                  style={
+                    styles.telemetrySub
+                  }
+                >
+                  {item.sub}
+                </Text>
 
-                <Text style={styles.statusText}>Good</Text>
-              </View>
-            </View>
-
-            {/* GRID */}
-            <View style={styles.grid}>
-              {widgets.map((item) => {
-                const active =
-                  activeWidget === item.key;
-
-                return (
-                  <Pressable
-                    key={item.key}
+                <View
+                  style={
+                    styles.telemetryLine
+                  }
+                >
+                  <View
                     style={[
-                      styles.widget,
-                      active && {
-                        borderColor: item.color,
+                      styles.telemetryLineFill,
+                      {
+                        backgroundColor:
+                          item.color,
                       },
                     ]}
-                    onPress={() =>
-                      onSelectWidget(item.key)
-                    }
-                  >
-                    <View style={styles.widgetTop}>
-                      <View
-                        style={[
-                          styles.widgetIconWrap,
-                          {
-                            backgroundColor:
-                              'rgba(255,255,255,0.45)',
-                          },
-                        ]}
-                      >
-                        <Ionicons
-                          name={item.icon}
-                          size={20}
-                          color={item.color}
-                        />
-                      </View>
+                  />
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
 
-                      <Ionicons
-                        name="chevron-forward"
-                        size={20}
-                        color={COLORS.white}
-                      />
-                    </View>
+        {/* NEURAL CORE */}
 
-                    <Text style={styles.widgetTitle}>
-                      {item.title}
-                    </Text>
-
-                    <Text style={styles.widgetValue}>
-                      {item.value}
-                    </Text>
-
-                    <View style={styles.progressBar}>
-                      <View
-                        style={[
-                          styles.progressFill,
-                          {
-                            width:
-                              item.key === 'financial'
-                                ? '57%'
-                                : item.key ===
-                                  'academic'
-                                ? '78%'
-                                : item.key ===
-                                  'scholarship'
-                                ? '62%'
-                                : '50%',
-                          },
-                        ]}
-                      />
-                    </View>
-
-                    <Text style={styles.widgetMeta}>
-                      {item.meta}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            {/* QUICK ACTIONS */}
-            <View style={styles.quickCard}>
-              <View style={styles.quickHeader}>
-                <Text style={styles.quickTitle}>
-                  Quick Actions
-                </Text>
-
-                <Text style={styles.seeAll}>
-                  See all
-                </Text>
-              </View>
-
-              <View style={styles.quickGrid}>
-                {[
-                  {
-                    icon: 'wallet-outline',
-                    label: 'Budget',
-                  },
-                  {
-                    icon: 'ribbon-outline',
-                    label: 'Scholarships',
-                  },
-                  {
-                    icon: 'calendar-outline',
-                    label: 'Planner',
-                  },
-                ].map((item) => (
-                  <Pressable
-                    key={item.label}
-                    style={styles.quickBtn}
-                  >
-                    <View style={styles.quickIcon}>
-                      <Ionicons
-                        name={item.icon}
-                        size={22}
-                        color={COLORS.white}
-                      />
-                    </View>
-
-                    <Text style={styles.quickLabel}>
-                      {item.label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-
-            {/* OVERVIEW */}
-            <View style={styles.overviewCard}>
-              <Text style={styles.overviewTitle}>
-                Upcoming & Overview
+        <View style={styles.coreSection}>
+          <View
+            style={styles.coreTop}
+          >
+            <View>
+              <Text
+                style={
+                  styles.coreTitle
+                }
+              >
+                NEURAL CORE
               </Text>
 
-              {[
-                {
-                  icon: 'calendar-outline',
-                  title: 'Next Assignment',
-                  value: 'Database Systems',
-                  tag: '3 days',
-                },
-
-                {
-                  icon: 'cash-outline',
-                  title: 'Upcoming Expense',
-                  value: 'Transport top-up',
-                  tag: '5 days',
-                },
-
-                {
-                  icon: 'bookmark-outline',
-                  title: 'Scholarship Stage',
-                  value: 'Awaiting payment confirmation',
-                },
-              ].map((item) => (
-                <View
-                  key={item.title}
-                  style={styles.overviewRow}
-                >
-                  <View style={styles.overviewLeft}>
-                    <View style={styles.overviewIcon}>
-                      <Ionicons
-                        name={item.icon}
-                        size={22}
-                        color={COLORS.white}
-                      />
-                    </View>
-
-                    <View>
-                      <Text
-                        style={styles.overviewLabel}
-                      >
-                        {item.title}
-                      </Text>
-
-                      <Text
-                        style={styles.overviewValue}
-                      >
-                        {item.value}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {item.tag && (
-                    <View style={styles.tag}>
-                      <Text style={styles.tagText}>
-                        {item.tag}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              ))}
+              <Text
+                style={
+                  styles.coreSub
+                }
+              >
+                Adaptive intelligence
+                engine
+              </Text>
             </View>
 
-            <View style={{ height: 40 }} />
-          </ScrollView>
-        </LinearGradient>
-      </View>
-    </ScreenWrapper>
+            <View
+              style={
+                styles.coreBadge
+              }
+            >
+              <Text
+                style={
+                  styles.coreBadgeText
+                }
+              >
+                AI ACTIVE
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.coreCard}>
+            <NeuralCore
+              mode={activeWidget}
+              budgetProgress={
+                metrics.budgetProgress
+              }
+              scholarshipUrgency={
+                metrics.scholarshipUrgency
+              }
+              academicRisk={
+                metrics.academicRisk
+              }
+              engagement={
+                metrics.engagementIntensity
+              }
+            />
+
+            <View
+              style={styles.hudTop}
+            >
+              <View
+                style={styles.hudBox}
+              >
+                <Text
+                  style={
+                    styles.hudLabel
+                  }
+                >
+                  FINANCIAL LOAD
+                </Text>
+
+                <Text
+                  style={
+                    styles.hudValue
+                  }
+                >
+                  Moderate
+                </Text>
+              </View>
+
+              <View
+                style={styles.hudBox}
+              >
+                <Text
+                  style={
+                    styles.hudLabel
+                  }
+                >
+                  ATTENDANCE
+                </Text>
+
+                <Text
+                  style={
+                    styles.hudValue
+                  }
+                >
+                  {
+                    dashboard
+                      .academic
+                      .attendancePct
+                  }
+                  %
+                </Text>
+              </View>
+            </View>
+
+            <View
+              style={
+                styles.hudBottom
+              }
+            >
+              <View
+                style={styles.signal}
+              >
+                <View
+                  style={[
+                    styles.signalBar,
+                    {
+                      height: 18,
+                    },
+                  ]}
+                />
+
+                <View
+                  style={[
+                    styles.signalBar,
+                    {
+                      height: 30,
+                    },
+                  ]}
+                />
+
+                <View
+                  style={[
+                    styles.signalBar,
+                    {
+                      height: 42,
+                    },
+                  ]}
+                />
+
+                <View
+                  style={[
+                    styles.signalBar,
+                    {
+                      height: 28,
+                    },
+                  ]}
+                />
+              </View>
+
+              <Text
+                style={
+                  styles.syncText
+                }
+              >
+                SYNCHRONIZING LIVE
+                STUDENT DATA
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={{ height: 120 }} />
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeBackground: {
+  safe: {
     flex: 1,
-    backgroundColor: COLORS.background,
-  },
-
-  container: {
-    flex: 1,
+    backgroundColor: COLORS.bg,
   },
 
   content: {
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 120,
+    paddingHorizontal: 22,
+    paddingTop: 12,
+    paddingBottom: 100,
   },
 
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
+  cyanGlow: {
+    position: 'absolute',
+    width: 240,
+    height: 240,
+    borderRadius: 999,
+    backgroundColor:
+      'rgba(125,211,252,0.18)',
+    top: 120,
+    right: -120,
   },
 
-  logo: {
-    fontSize: 34,
-    fontWeight: '900',
-    color: COLORS.white,
-    letterSpacing: -1,
+  violetGlow: {
+    position: 'absolute',
+    width: 220,
+    height: 220,
+    borderRadius: 999,
+    backgroundColor:
+      'rgba(196,181,253,0.14)',
+    top: 420,
+    left: -120,
   },
 
-  subtitle: {
-    marginTop: 4,
-    fontSize: 15,
-    color: '#DDE5EA',
-    fontWeight: '500',
+  greenGlow: {
+    position: 'absolute',
+    width: 180,
+    height: 180,
+    borderRadius: 999,
+    backgroundColor:
+      'rgba(134,239,172,0.12)',
+    bottom: 120,
+    right: -80,
   },
 
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-
-  iconBtn: {
-    width: 56,
-    height: 56,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+  loading: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: COLORS.bg,
+  },
+
+  loadingText: {
+    marginTop: 16,
+    fontSize: 15,
+    fontFamily:
+      'JosefinSans-Bold',
+  },
+
+  topBar: {
+    flexDirection: 'row',
+    justifyContent:
+      'space-between',
+    alignItems: 'center',
+    marginBottom: 28,
+  },
+
+  brandWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  brandDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+    backgroundColor:
+      COLORS.cyan,
+    marginRight: 12,
+  },
+
+  brand: {
+    fontSize: 13,
+    letterSpacing: 3,
+    color: COLORS.text,
+    fontFamily:
+      'JosefinSans-Bold',
+  },
+
+  topRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  livePill: {
+    height: 36,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor:
+      'rgba(255,255,255,0.6)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor:
+      COLORS.green,
+    marginRight: 8,
+  },
+
+  liveText: {
+    fontSize: 11,
+    letterSpacing: 1.5,
+    color: COLORS.text,
+    fontFamily:
+      'JosefinSans-Bold',
   },
 
   avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#E2E8F0',
-  },
-
-  heroCard: {
-    height: 380,
-    borderRadius: 34,
-    overflow: 'hidden',
-    marginBottom: 18,
-    backgroundColor: '#16232D',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-  },
-
-  heroOverlay: {
-    ...StyleSheet.absoluteFillObject,
-  },
-
-  heroContent: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    bottom: 24,
-  },
-
-  liveBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    marginBottom: 18,
-  },
-
-  liveBadgeText: {
-    color: COLORS.white,
-    fontWeight: '700',
-    fontSize: 14,
-  },
-
-  heroTitle: {
-    color: COLORS.white,
-    fontSize: 38,
-    fontWeight: '900',
-    lineHeight: 42,
-    letterSpacing: -1,
-  },
-
-  heroSub: {
-    color: '#D8E0E5',
-    fontSize: 30,
-    fontWeight: '700',
-    marginTop: 4,
-    letterSpacing: -0.5,
-  },
-
-  pagination: {
-    flexDirection: 'row',
-    marginTop: 18,
-    gap: 10,
-  },
-
-  pageActive: {
-    width: 36,
-    height: 6,
-    borderRadius: 999,
-    backgroundColor: COLORS.white,
-  },
-
-  pageDot: {
-    width: 26,
-    height: 6,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-  },
-
-  systemCard: {
-    backgroundColor: 'rgba(100,120,140,0.35)',
-    borderRadius: 28,
-    padding: 18,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 18,
-  },
-
-  systemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-
-  sparkle: {
     width: 54,
     height: 54,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor:
+      COLORS.black,
     justifyContent: 'center',
     alignItems: 'center',
   },
 
-  systemTitle: {
-    color: COLORS.white,
-    fontSize: 24,
-    fontWeight: '800',
+  avatarText: {
+    color: '#fff',
+    fontSize: 18,
+    fontFamily:
+      'JosefinSans-Bold',
+  },
+userRow: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  marginBottom: 28,
+},
+
+  title: {
+    fontSize: 18,
+    color: COLORS.muted,
+    fontFamily:
+      'JosefinSans-Regular',
   },
 
-  systemText: {
-    color: '#DCE4E9',
-    marginTop: 4,
-    fontSize: 15,
+  user: {
+    marginTop: 6,
+    fontSize: 42,
+    lineHeight: 42,
+    letterSpacing: -2,
+    color: COLORS.text,
+    fontFamily:
+      'JosefinSans-Bold',
   },
 
-  statusBadge: {
+ statusBlock: {
+  alignItems: 'flex-end',
+  justifyContent: 'center',
+  paddingBottom: 4,
+},
+
+ statusLabel: {
+  fontSize: 10,
+  letterSpacing: 2,
+  color: COLORS.muted,
+  marginBottom: 6,
+  fontFamily: 'JosefinSans-Bold',
+},
+
+statusValue: {
+  fontSize: 22,
+  lineHeight: 24,
+  color: COLORS.text,
+  fontFamily: 'JosefinSans-Bold',
+},
+
+  commandCard: {
+    overflow: 'hidden',
+    borderRadius: 36,
+    padding: 28,
+    backgroundColor:
+      COLORS.surface,
+    borderWidth: 1,
+    borderColor:
+      COLORS.border,
+    marginBottom: 26,
+  },
+
+  commandGlow: {
+    ...StyleSheet.absoluteFillObject,
+  },
+
+  commandTop: {
     flexDirection: 'row',
+    justifyContent:
+      'space-between',
+  },
+
+  commandLabel: {
+    fontSize: 12,
+    letterSpacing: 2,
+    color: COLORS.muted,
+    fontFamily:
+      'JosefinSans-Bold',
+  },
+
+  commandValue: {
+    marginTop: 18,
+    fontSize: 50,
+    lineHeight: 56,
+    letterSpacing: -4,
+    color: COLORS.text,
+    fontFamily:
+      'JosefinSans-Bold',
+  },
+
+  commandSub: {
+    marginTop: 12,
+    fontSize: 15,
+    color: COLORS.muted,
+    fontFamily:
+      'JosefinSans-Regular',
+  },
+
+  ringWrap: {
+    width: 130,
+    height: 130,
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+  },
+
+  outerRing: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor:
+      'rgba(0,0,0,0.08)',
+  },
+
+  middleRing: {
+    position: 'absolute',
+    width: 90,
+    height: 90,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor:
+      'rgba(0,0,0,0.08)',
   },
 
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: COLORS.white,
+  coreRing: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
   },
 
-  statusText: {
-    color: COLORS.white,
+  graph: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginTop: 34,
+  },
+
+  graphBar: {
+    width: 20,
+    borderRadius: 999,
+    backgroundColor:
+      COLORS.black,
+    marginRight: 10,
+  },
+
+  commandFooter: {
+    marginTop: 30,
+    flexDirection: 'row',
+    justifyContent:
+      'space-between',
+  },
+
+  footerMetric: {
+    flex: 1,
+  },
+
+  footerLabel: {
+    fontSize: 12,
+    letterSpacing: 1.5,
+    color: COLORS.muted,
+    marginBottom: 8,
+    fontFamily:
+      'JosefinSans-Bold',
+  },
+
+  footerValue: {
     fontSize: 18,
-    fontWeight: '700',
+    color: COLORS.text,
+    fontFamily:
+      'JosefinSans-Bold',
   },
 
-  grid: {
+  telemetryWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    gap: 14,
+    justifyContent:
+      'space-between',
+    marginBottom: 36,
   },
 
-  widget: {
-    width: CARD_WIDTH,
-    backgroundColor: 'rgba(110,130,145,0.45)',
-    borderRadius: 30,
-    padding: 18,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.08)',
-    minHeight: 250,
+  telemetryCard: {
+    width: (width - 56) / 2,
+    minHeight: 180,
+    borderRadius: 32,
+    padding: 20,
+    overflow: 'hidden',
+    backgroundColor:
+      COLORS.surfaceStrong,
+    borderWidth: 1,
+    borderColor:
+      'rgba(255,255,255,0.34)',
+    marginBottom: 16,
   },
 
-  widgetTop: {
+  telemetryGradient: {
+    ...StyleSheet.absoluteFillObject,
+  },
+
+  telemetryTop: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent:
+      'space-between',
     alignItems: 'center',
-    marginBottom: 22,
   },
 
-  widgetIconWrap: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
+  iconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
   },
 
-  widgetTitle: {
-    color: COLORS.white,
-    fontSize: 17,
-    fontWeight: '700',
-  },
-
-  widgetValue: {
-    color: COLORS.white,
-    fontSize: 32,
-    fontWeight: '900',
-    marginTop: 24,
-    lineHeight: 36,
-  },
-
-  progressBar: {
+  activeIndicator: {
+    width: 10,
     height: 10,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    overflow: 'hidden',
-    marginTop: 24,
   },
 
-  progressFill: {
+  telemetryValue: {
+    marginTop: 26,
+    fontSize: 28,
+    letterSpacing: -1.5,
+    color: COLORS.text,
+    fontFamily:
+      'JosefinSans-Bold',
+  },
+
+  telemetryLabel: {
+    marginTop: 12,
+    fontSize: 12,
+    letterSpacing: 1.5,
+    color: COLORS.muted,
+    fontFamily:
+      'JosefinSans-Bold',
+  },
+
+  telemetrySub: {
+    marginTop: 6,
+    fontSize: 14,
+    lineHeight: 20,
+    color: COLORS.muted,
+    fontFamily:
+      'JosefinSans-Regular',
+  },
+
+  telemetryLine: {
+    marginTop: 18,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor:
+      'rgba(0,0,0,0.06)',
+    overflow: 'hidden',
+  },
+
+  telemetryLineFill: {
+    width: '70%',
     height: '100%',
     borderRadius: 999,
-    backgroundColor: '#E8EEF2',
   },
 
-  widgetMeta: {
-    marginTop: 16,
-    color: '#D9E0E5',
-    fontSize: 15,
-    lineHeight: 22,
+  coreSection: {
+    marginTop: 6,
   },
 
-  quickCard: {
-    marginTop: 20,
-    backgroundColor: 'rgba(80,100,120,0.4)',
-    borderRadius: 34,
-    padding: 20,
-  },
+coreTop: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  marginBottom: 20,
+},
 
-  quickHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 18,
-  },
-
-  quickTitle: {
-    color: COLORS.white,
+  coreTitle: {
     fontSize: 30,
-    fontWeight: '800',
+    letterSpacing: -2,
+    color: COLORS.text,
+    fontFamily:
+      'JosefinSans-Bold',
   },
 
-  seeAll: {
-    color: '#E4EBEF',
-    fontSize: 18,
-    fontWeight: '600',
+  coreSub: {
+    marginTop: 6,
+    fontSize: 14,
+    color: COLORS.muted,
+    fontFamily:
+      'JosefinSans-Regular',
   },
 
-  quickGrid: {
+coreBadge: {
+  height: 38,
+  paddingHorizontal: 18,
+  borderRadius: 999,
+  backgroundColor: COLORS.black,
+  justifyContent: 'center',
+  alignItems: 'center',
+  marginTop: -18,
+},
+
+  coreBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    letterSpacing: 1.5,
+    fontFamily:
+      'JosefinSans-Bold',
+  },
+
+  coreCard: {
+    height: 500,
+    borderRadius: 42,
+    overflow: 'hidden',
+    backgroundColor:
+      COLORS.black,
+  },
+
+  hudTop: {
+    position: 'absolute',
+    top: 22,
+    left: 22,
+    right: 22,
     flexDirection: 'row',
-    gap: 14,
+    justifyContent:
+      'space-between',
   },
 
-  quickBtn: {
-    flex: 1,
-    height: 120,
+  hudBox: {
+    width: 140,
+    padding: 16,
     borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 14,
+    backgroundColor:
+      'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor:
+      'rgba(255,255,255,0.08)',
   },
 
-  quickIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
+  hudLabel: {
+    fontSize: 10,
+    letterSpacing: 1.5,
+    color: '#8B8B8B',
+    fontFamily:
+      'JosefinSans-Bold',
   },
 
-  quickLabel: {
-    color: COLORS.white,
-    fontWeight: '700',
-    fontSize: 18,
+  hudValue: {
+    marginTop: 12,
+    fontSize: 20,
+    color: '#fff',
+    fontFamily:
+      'JosefinSans-Bold',
   },
 
-  overviewCard: {
-    marginTop: 20,
-    backgroundColor: 'rgba(60,80,100,0.45)',
-    borderRadius: 34,
-    padding: 22,
-  },
-
-  overviewTitle: {
-    color: COLORS.white,
-    fontSize: 32,
-    fontWeight: '800',
-    marginBottom: 18,
-  },
-
-  overviewRow: {
+  hudBottom: {
+    position: 'absolute',
+    bottom: 24,
+    left: 24,
+    right: 24,
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 18,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    justifyContent:
+      'space-between',
+    alignItems: 'flex-end',
   },
 
-  overviewLeft: {
+  signal: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
+    alignItems: 'flex-end',
   },
 
-  overviewIcon: {
-    width: 58,
-    height: 58,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  overviewLabel: {
-    color: '#DCE4E9',
-    fontSize: 15,
-    marginBottom: 4,
-  },
-
-  overviewValue: {
-    color: COLORS.white,
-    fontSize: 22,
-    fontWeight: '700',
-  },
-
-  tag: {
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
+  signalBar: {
+    width: 8,
     borderRadius: 999,
+    backgroundColor:
+      COLORS.cyan,
+    marginRight: 6,
   },
 
-  tagText: {
-    color: COLORS.white,
-    fontSize: 16,
-    fontWeight: '700',
+  syncText: {
+    width: 140,
+    fontSize: 11,
+    lineHeight: 18,
+    letterSpacing: 1.5,
+    textAlign: 'right',
+    color: '#8B8B8B',
+    fontFamily:
+      'JosefinSans-Bold',
   },
 });

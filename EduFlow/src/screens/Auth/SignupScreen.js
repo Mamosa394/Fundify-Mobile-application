@@ -1,378 +1,1250 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  SafeAreaView, ScrollView, StyleSheet, Text, View, TextInput, 
-  Pressable, ActivityIndicator, KeyboardAvoidingView, Platform, Modal, FlatList 
+// src/screens/auth/SignupScreen.js
+
+import React, {
+  useEffect,
+  useState,
+} from 'react';
+
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  Pressable,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Modal,
+  FlatList,
+  ScrollView,
 } from 'react-native';
+
+import {
+  SafeAreaView,
+} from 'react-native-safe-area-context';
+
 import { StatusBar } from 'expo-status-bar';
+
 import { LinearGradient } from 'expo-linear-gradient';
-// FIXED IMPORT - Make sure the path is correct
-import { registerStudent } from '../../services/firebase';
-import { ArrowLeft, ChevronDown, Check, Eye, EyeOff } from 'lucide-react-native';
+
 import * as Haptics from 'expo-haptics';
 
-export default function SignupScreen({ navigation, onBack, onSignupComplete }) {
-  const [form, setForm] = useState({
-    name: '',
-    email: '',
-    password: '',
-    confirmPassword: '',
-    studentNumber: '',
-    university: '',
-    fundingType: '',
-  });
+import {
+  ArrowLeft,
+  ChevronDown,
+  Check,
+  Eye,
+  EyeOff,
+} from 'lucide-react-native';
 
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [uniModalVisible, setUniModalVisible] = useState(false);
-  const [sponModalVisible, setSponModalVisible] = useState(false);
-  
-  const [strength, setStrength] = useState({ score: 0, label: '', color: '#cbd5e1' });
 
-  const universities = ["National University of Lesotho (NUL)", "Limkokwing University (LUCT)", "Botho University", "Lerotholi Polytechnic", "Lesotho College of Education (LCE)", "CAS", "IDM Lesotho", "NHTC"];
-  const fundingTypes = ["NMDS", "Self-Funded", "Bursary", "Scholarship"];
+import {
+  registerStudent,
+} from '../../services/authService';
+
+
+const UNIVERSITIES = [
+  'National University of Lesotho (NUL)',
+  'Limkokwing University (LUCT)',
+  'Botho University',
+  'Lerotholi Polytechnic',
+  'Lesotho College of Education (LCE)',
+  'CAS',
+  'IDM Lesotho',
+  'NHTC',
+];
+
+const FUNDING_TYPES = [
+  'NMDS',
+  'Self-Funded',
+  'Bursary',
+  'Scholarship',
+];
+
+/*
+|--------------------------------------------------------------------------
+| COMPONENT
+|--------------------------------------------------------------------------
+*/
+
+export default function SignupScreen({
+  navigation,
+  onBack,
+  onSignupComplete,
+}) {
+  /*
+  |--------------------------------------------------------------------------
+  | STATE
+  |--------------------------------------------------------------------------
+  */
+
+  const [form, setForm] =
+    useState({
+      name: '',
+      email: '',
+      password: '',
+      confirmPassword: '',
+      studentNumber: '',
+      university: '',
+      fundingType: '',
+    });
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [error, setError] =
+    useState('');
+
+  const [showPassword, setShowPassword] =
+    useState(false);
+
+  const [
+    showConfirmPassword,
+    setShowConfirmPassword,
+  ] = useState(false);
+
+  const [
+    uniModalVisible,
+    setUniModalVisible,
+  ] = useState(false);
+
+  const [
+    fundingModalVisible,
+    setFundingModalVisible,
+  ] = useState(false);
+
+  const [strength, setStrength] =
+    useState({
+      score: 0,
+      label: '',
+      color: '#cbd5e1',
+    });
+
+  /*
+  |--------------------------------------------------------------------------
+  | PASSWORD STRENGTH
+  |--------------------------------------------------------------------------
+  */
 
   useEffect(() => {
     const pass = form.password;
+
     let score = 0;
+
     if (pass.length > 0) score = 1;
+
     if (pass.length >= 6) score = 2;
-    if (/[A-Z]/.test(pass) && /[0-9]/.test(pass)) score = 3;
-    if (/[!@#$%^&*]/.test(pass) && pass.length >= 8) score = 4;
+
+    if (
+      /[A-Z]/.test(pass) &&
+      /[0-9]/.test(pass)
+    ) {
+      score = 3;
+    }
+
+    if (
+      /[!@#$%^&*]/.test(pass) &&
+      pass.length >= 8
+    ) {
+      score = 4;
+    }
 
     const levels = [
-      { label: '', color: '#cbd5e1' },
-      { label: 'Weak', color: '#ef4444' },
-      { label: 'Fair', color: '#f59e0b' },
-      { label: 'Good', color: '#3b82f6' },
-      { label: 'Strong', color: '#10b981' },
+      {
+        label: '',
+        color: '#cbd5e1',
+      },
+
+      {
+        label: 'Weak',
+        color: '#ef4444',
+      },
+
+      {
+        label: 'Fair',
+        color: '#f59e0b',
+      },
+
+      {
+        label: 'Good',
+        color: '#3b82f6',
+      },
+
+      {
+        label: 'Strong',
+        color: '#10b981',
+      },
     ];
+
     setStrength(levels[score]);
   }, [form.password]);
 
-  const handleSignup = async () => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  /*
+  |--------------------------------------------------------------------------
+  | INPUT CHANGE
+  |--------------------------------------------------------------------------
+  */
+
+  function updateField(
+    key,
+    value
+  ) {
+    setForm((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | SIGNUP
+  |--------------------------------------------------------------------------
+  */
+
+  async function handleSignup() {
+    const emailRegex =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    /*
+    |--------------------------------------------------------------------------
+    | VALIDATION
+    |--------------------------------------------------------------------------
+    */
 
     if (!form.name.trim()) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      setError('Please enter your full name');
-      return;
-    }
-    if (!form.email.trim() || !emailRegex.test(form.email.trim())) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      setError('Please enter a valid email address');
-      return;
-    }
-    if (!form.studentNumber.trim()) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      setError('Please enter your student number');
-      return;
-    }
-    if (!form.university) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      setError('Please select your university');
-      return;
-    }
-    if (!form.fundingType) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      setError('Please select your funding type');
-      return;
-    }
-    if (form.password.length < 6) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      setError('Password must be at least 6 characters');
-      return;
-    }
-    if (form.password !== form.confirmPassword) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      setError('Passwords do not match');
-      return;
+      setError(
+        'Please enter your full name'
+      );
+
+      return Haptics.notificationAsync(
+        Haptics.NotificationFeedbackType.Warning
+      );
     }
 
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (
+      !form.email.trim() ||
+      !emailRegex.test(
+        form.email.trim()
+      )
+    ) {
+      setError(
+        'Please enter a valid email'
+      );
+
+      return Haptics.notificationAsync(
+        Haptics.NotificationFeedbackType.Warning
+      );
+    }
+
+    if (
+      !form.studentNumber.trim()
+    ) {
+      setError(
+        'Please enter your student number'
+      );
+
+      return Haptics.notificationAsync(
+        Haptics.NotificationFeedbackType.Warning
+      );
+    }
+
+    if (!form.university) {
+      setError(
+        'Please select your university'
+      );
+
+      return Haptics.notificationAsync(
+        Haptics.NotificationFeedbackType.Warning
+      );
+    }
+
+    if (!form.fundingType) {
+      setError(
+        'Please select funding type'
+      );
+
+      return Haptics.notificationAsync(
+        Haptics.NotificationFeedbackType.Warning
+      );
+    }
+
+    if (form.password.length < 6) {
+      setError(
+        'Password must be at least 6 characters'
+      );
+
+      return Haptics.notificationAsync(
+        Haptics.NotificationFeedbackType.Warning
+      );
+    }
+
+    if (
+      form.password !==
+      form.confirmPassword
+    ) {
+      setError(
+        'Passwords do not match'
+      );
+
+      return Haptics.notificationAsync(
+        Haptics.NotificationFeedbackType.Warning
+      );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | REGISTER
+    |--------------------------------------------------------------------------
+    */
 
     try {
       setLoading(true);
+
       setError('');
 
-      console.log('[SignupScreen] Starting registration for:', form.email);
-      console.log('[SignupScreen] Profile data:', {
-        name: form.name.trim(),
-        university: form.university,
-        fundingType: form.fundingType,
-        studentNumber: form.studentNumber.trim()
-      });
-
-      // Check if registerStudent is available
-      if (typeof registerStudent !== 'function') {
-        console.error('[SignupScreen] registerStudent is not a function. Available exports:', Object.keys({ registerStudent }));
-        throw new Error('Firebase service not properly loaded');
-      }
-
-      const profileData = {
-        name: form.name.trim(),
-        studentNumber: form.studentNumber.trim(),
-        university: form.university,
-        fundingType: form.fundingType,
-      };
-
-      const userCredential = await registerStudent(
-        form.email.trim(), 
-        form.password, 
-        profileData
+      Haptics.impactAsync(
+        Haptics.ImpactFeedbackStyle.Medium
       );
-      
-      console.log('[SignupScreen] Registration successful for UID:', userCredential.user.uid);
-      
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      
+
+      const result =
+        await registerStudent(
+          form.email.trim(),
+          form.password,
+          {
+            name:
+              form.name.trim(),
+
+            studentNumber:
+              form.studentNumber.trim(),
+
+            university:
+              form.university,
+
+            fundingType:
+              form.fundingType,
+          }
+        );
+
+      console.log(
+        '[SignupScreen] Registration success:',
+        result
+      );
+
+      Haptics.notificationAsync(
+        Haptics.NotificationFeedbackType.Success
+      );
+
+      /*
+      |--------------------------------------------------------------------------
+      | NAVIGATE
+      |--------------------------------------------------------------------------
+      */
+
       if (onSignupComplete) {
-        onSignupComplete(userCredential.user.uid);
+        onSignupComplete(
+          result.user.uid
+        );
+
+        return;
       }
 
+      navigation?.replace?.(
+        'DashboardScreen'
+      );
     } catch (err) {
-      console.error('[SignupScreen] Registration error:', err);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      
-      if (err.code === 'auth/email-already-in-use') {
-        setError('Email already registered. Please login instead.');
-      } else if (err.code === 'auth/weak-password') {
-        setError('Password is too weak. Use at least 6 characters with letters and numbers.');
-      } else if (err.code === 'auth/invalid-email') {
-        setError('Invalid email format.');
-      } else if (err.message && err.message.includes('permission-denied')) {
-        setError('Database permission error. Please contact support.');
-      } else {
-        setError('Signup failed: ' + (err.message || 'Please try again.'));
+      console.log(
+        '[SignupScreen] Error:',
+        err
+      );
+
+      Haptics.notificationAsync(
+        Haptics.NotificationFeedbackType.Error
+      );
+
+      switch (err.code) {
+        case 'auth/email-already-in-use':
+          setError(
+            'Email already exists'
+          );
+          break;
+
+        case 'auth/invalid-email':
+          setError(
+            'Invalid email address'
+          );
+          break;
+
+        case 'auth/weak-password':
+          setError(
+            'Password too weak'
+          );
+          break;
+
+        case 'auth/network-request-failed':
+          setError(
+            'Check your internet connection'
+          );
+          break;
+
+        case 'permission-denied':
+        case 'firestore/permission-denied':
+          setError(
+            'Database permissions error'
+          );
+          break;
+
+        default:
+          setError(
+            err.message ||
+              'Signup failed'
+          );
       }
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const SelectionItem = ({ item, selectedValue, onSelect }) => (
-    <Pressable 
-      style={[styles.modalItem, selectedValue === item && styles.modalItemSelected]} 
-      onPress={() => {
-        Haptics.selectionAsync();
-        onSelect(item);
-      }}
-    >
-      <Text style={[styles.modalItemText, selectedValue === item && styles.modalItemTextSelected]}>
-        {item}
-      </Text>
-      {selectedValue === item && <Check size={20} color="#334155" />}
-    </Pressable>
-  );
+  /*
+  |--------------------------------------------------------------------------
+  | SELECTION ITEM
+  |--------------------------------------------------------------------------
+  */
+
+  function SelectionItem({
+    item,
+    selectedValue,
+    onSelect,
+  }) {
+    const active =
+      selectedValue === item;
+
+    return (
+      <Pressable
+        style={[
+          styles.modalItem,
+          active &&
+            styles.modalItemActive,
+        ]}
+        onPress={() => {
+          Haptics.selectionAsync();
+
+          onSelect(item);
+        }}
+      >
+        <Text
+          style={[
+            styles.modalItemText,
+
+            active &&
+              styles.modalItemTextActive,
+          ]}
+        >
+          {item}
+        </Text>
+
+        {active && (
+          <Check
+            size={20}
+            color="#334155"
+          />
+        )}
+      </Pressable>
+    );
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | UI
+  |--------------------------------------------------------------------------
+  */
 
   return (
-    <LinearGradient colors={['#e2e8f0', '#cbd5e1', '#94a3b8']} style={styles.background}>
-      <SafeAreaView style={{ flex: 1 }}>
-        <StatusBar style="dark-content" />
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-          <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-            
-              <Pressable
-                style={styles.backButton}
-                onPress={() => {
-                  if (onBack) return onBack();
-                  if (navigation?.goBack) return navigation.goBack();
-                }}
-              >
-              <ArrowLeft color="#4a616c" size={24} />
+    <LinearGradient
+      colors={[
+        '#e2e8f0',
+        '#d7dee5',
+        '#cbd5e1',
+      ]}
+      style={styles.container}
+    >
+      <SafeAreaView
+        style={styles.safe}
+      >
+        <StatusBar style="dark" />
+
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={
+            Platform.OS === 'ios'
+              ? 'padding'
+              : undefined
+          }
+        >
+          <ScrollView
+            contentContainerStyle={
+              styles.scroll
+            }
+            showsVerticalScrollIndicator={
+              false
+            }
+          >
+            {/* BACK BUTTON */}
+
+            <Pressable
+              style={styles.backBtn}
+              onPress={() => {
+                if (onBack)
+                  return onBack();
+
+                navigation?.goBack?.();
+              }}
+            >
+              <ArrowLeft
+                size={22}
+                color="#334155"
+              />
             </Pressable>
 
+            {/* HEADER */}
+
             <View style={styles.header}>
-              <Text style={styles.welcomeTitle}>Create{"\n"}Account</Text>
-              <Text style={styles.welcomeSubtitle}>Join the EduFlow scholar community</Text>
+              <Text style={styles.title}>
+                Create{'\n'}Account
+              </Text>
+
+              <Text
+                style={styles.subtitle}
+              >
+                Join the EduFlow
+                student ecosystem
+              </Text>
             </View>
 
+            {/* FORM */}
+
             <View style={styles.form}>
-              {error ? <Text style={styles.errorText}>{error}</Text> : null}
+              {!!error && (
+                <Text
+                  style={styles.error}
+                >
+                  {error}
+                </Text>
+              )}
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>FULL NAME *</Text>
-                <TextInput 
-                  style={styles.input} 
-                  placeholder="Thabo Tlou" 
-                  placeholderTextColor="#94a3b8" 
-                  value={form.name} 
-                  onChangeText={(text) => setForm({ ...form, name: text })}
-                  editable={!loading}
+              {/* NAME */}
+
+              <View
+                style={styles.group}
+              >
+                <Text
+                  style={styles.label}
+                >
+                  FULL NAME
+                </Text>
+
+                <TextInput
+                  value={form.name}
+                  onChangeText={(
+                    text
+                  ) =>
+                    updateField(
+                      'name',
+                      text
+                    )
+                  }
+                  placeholder="Thabo Tlou"
+                  placeholderTextColor="#94a3b8"
+                  style={styles.input}
                 />
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>STUDENT NUMBER *</Text>
-                <TextInput 
-                  style={styles.input} 
-                  placeholder="2024XXXX" 
-                  placeholderTextColor="#94a3b8" 
-                  value={form.studentNumber} 
-                  onChangeText={(text) => setForm({ ...form, studentNumber: text })}
+              {/* STUDENT NUMBER */}
+
+              <View
+                style={styles.group}
+              >
+                <Text
+                  style={styles.label}
+                >
+                  STUDENT NUMBER
+                </Text>
+
+                <TextInput
+                  value={
+                    form.studentNumber
+                  }
+                  onChangeText={(
+                    text
+                  ) =>
+                    updateField(
+                      'studentNumber',
+                      text
+                    )
+                  }
+                  placeholder="20240001"
                   keyboardType="numeric"
-                  editable={!loading}
+                  placeholderTextColor="#94a3b8"
+                  style={styles.input}
                 />
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>STUDENT EMAIL *</Text>
-                <TextInput 
-                  style={styles.input} 
-                  placeholder="youremail@gmail.com" 
-                  placeholderTextColor="#94a3b8" 
-                  value={form.email} 
-                  onChangeText={(text) => setForm({ ...form, email: text })} 
-                  autoCapitalize="none" 
+              {/* EMAIL */}
+
+              <View
+                style={styles.group}
+              >
+                <Text
+                  style={styles.label}
+                >
+                  EMAIL
+                </Text>
+
+                <TextInput
+                  value={form.email}
+                  onChangeText={(
+                    text
+                  ) =>
+                    updateField(
+                      'email',
+                      text
+                    )
+                  }
+                  placeholder="student@gmail.com"
+                  autoCapitalize="none"
                   keyboardType="email-address"
-                  editable={!loading}
+                  placeholderTextColor="#94a3b8"
+                  style={styles.input}
                 />
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>PASSWORD *</Text>
-                <View style={styles.passwordContainer}>
+              {/* PASSWORD */}
+
+              <View
+                style={styles.group}
+              >
+                <Text
+                  style={styles.label}
+                >
+                  PASSWORD
+                </Text>
+
+                <View
+                  style={
+                    styles.passwordWrap
+                  }
+                >
                   <TextInput
-                    style={styles.rawInput}
+                    value={
+                      form.password
+                    }
+                    onChangeText={(
+                      text
+                    ) =>
+                      updateField(
+                        'password',
+                        text
+                      )
+                    }
                     placeholder="••••••••"
+                    secureTextEntry={
+                      !showPassword
+                    }
                     placeholderTextColor="#94a3b8"
-                    value={form.password}
-                    onChangeText={(text) => setForm({ ...form, password: text })}
-                    secureTextEntry={!showPassword}
-                    editable={!loading}
+                    style={
+                      styles.passwordInput
+                    }
                   />
-                  <Pressable onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
-                    {showPassword ? <EyeOff size={20} color="#64748b" /> : <Eye size={20} color="#64748b" />}
+
+                  <Pressable
+                    onPress={() =>
+                      setShowPassword(
+                        !showPassword
+                      )
+                    }
+                    style={
+                      styles.eyeBtn
+                    }
+                  >
+                    {showPassword ? (
+                      <EyeOff
+                        size={20}
+                        color="#64748b"
+                      />
+                    ) : (
+                      <Eye
+                        size={20}
+                        color="#64748b"
+                      />
+                    )}
                   </Pressable>
                 </View>
-                
-                {form.password.length > 0 && (
-                  <View style={styles.strengthRow}>
-                    <View style={styles.barBg}>
-                      <View style={[styles.barFill, { width: `${(strength.score / 4) * 100}%`, backgroundColor: strength.color }]} />
+
+                {form.password
+                  .length > 0 && (
+                  <View
+                    style={
+                      styles.strengthRow
+                    }
+                  >
+                    <View
+                      style={
+                        styles.barBg
+                      }
+                    >
+                      <View
+                        style={[
+                          styles.barFill,
+                          {
+                            width: `${
+                              (strength.score /
+                                4) *
+                              100
+                            }%`,
+                            backgroundColor:
+                              strength.color,
+                          },
+                        ]}
+                      />
                     </View>
-                    <Text style={[styles.strengthLabel, { color: strength.color }]}>{strength.label}</Text>
+
+                    <Text
+                      style={[
+                        styles.strengthText,
+                        {
+                          color:
+                            strength.color,
+                        },
+                      ]}
+                    >
+                      {
+                        strength.label
+                      }
+                    </Text>
                   </View>
                 )}
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>CONFIRM PASSWORD *</Text>
-                <View style={styles.passwordContainer}>
+              {/* CONFIRM PASSWORD */}
+
+              <View
+                style={styles.group}
+              >
+                <Text
+                  style={styles.label}
+                >
+                  CONFIRM PASSWORD
+                </Text>
+
+                <View
+                  style={
+                    styles.passwordWrap
+                  }
+                >
                   <TextInput
-                    style={styles.rawInput}
+                    value={
+                      form.confirmPassword
+                    }
+                    onChangeText={(
+                      text
+                    ) =>
+                      updateField(
+                        'confirmPassword',
+                        text
+                      )
+                    }
                     placeholder="••••••••"
+                    secureTextEntry={
+                      !showConfirmPassword
+                    }
                     placeholderTextColor="#94a3b8"
-                    value={form.confirmPassword}
-                    onChangeText={(text) => setForm({ ...form, confirmPassword: text })}
-                    secureTextEntry={!showConfirmPassword}
-                    editable={!loading}
+                    style={
+                      styles.passwordInput
+                    }
                   />
-                  <Pressable onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={styles.eyeIcon}>
-                    {showConfirmPassword ? <EyeOff size={20} color="#64748b" /> : <Eye size={20} color="#64748b" />}
+
+                  <Pressable
+                    onPress={() =>
+                      setShowConfirmPassword(
+                        !showConfirmPassword
+                      )
+                    }
+                    style={
+                      styles.eyeBtn
+                    }
+                  >
+                    {showConfirmPassword ? (
+                      <EyeOff
+                        size={20}
+                        color="#64748b"
+                      />
+                    ) : (
+                      <Eye
+                        size={20}
+                        color="#64748b"
+                      />
+                    )}
                   </Pressable>
                 </View>
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>UNIVERSITY / COLLEGE *</Text>
-                <Pressable style={styles.input} onPress={() => setUniModalVisible(true)} disabled={loading}>
-                  <Text style={[styles.inputText, !form.university && { color: '#94a3b8' }]}>
-                    {form.university || "Select Institution"}
+              {/* UNIVERSITY */}
+
+              <View
+                style={styles.group}
+              >
+                <Text
+                  style={styles.label}
+                >
+                  UNIVERSITY
+                </Text>
+
+                <Pressable
+                  style={styles.select}
+                  onPress={() =>
+                    setUniModalVisible(
+                      true
+                    )
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.selectText,
+
+                      !form.university && {
+                        color:
+                          '#94a3b8',
+                      },
+                    ]}
+                  >
+                    {form.university ||
+                      'Select institution'}
                   </Text>
-                  <ChevronDown size={20} color="#475569" />
+
+                  <ChevronDown
+                    size={20}
+                    color="#64748b"
+                  />
                 </Pressable>
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>FUNDING TYPE *</Text>
-                <Pressable style={styles.input} onPress={() => setSponModalVisible(true)} disabled={loading}>
-                  <Text style={[styles.inputText, !form.fundingType && { color: '#94a3b8' }]}>
-                    {form.fundingType || "Select Funding Type"}
+              {/* FUNDING */}
+
+              <View
+                style={styles.group}
+              >
+                <Text
+                  style={styles.label}
+                >
+                  FUNDING TYPE
+                </Text>
+
+                <Pressable
+                  style={styles.select}
+                  onPress={() =>
+                    setFundingModalVisible(
+                      true
+                    )
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.selectText,
+
+                      !form.fundingType && {
+                        color:
+                          '#94a3b8',
+                      },
+                    ]}
+                  >
+                    {form.fundingType ||
+                      'Select funding'}
                   </Text>
-                  <ChevronDown size={20} color="#475569" />
+
+                  <ChevronDown
+                    size={20}
+                    color="#64748b"
+                  />
                 </Pressable>
               </View>
 
-              <Pressable onPress={handleSignup} disabled={loading}>
-                <LinearGradient colors={loading ? ['#94a3b8', '#64748b'] : ['#4a616c', '#334155']} style={styles.signUpButton}>
-                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.signUpButtonText}>Create Account</Text>}
+              {/* BUTTON */}
+
+              <Pressable
+                onPress={
+                  handleSignup
+                }
+                disabled={loading}
+              >
+                <LinearGradient
+                  colors={[
+                    '#4a616c',
+                    '#334155',
+                  ]}
+                  style={styles.button}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text
+                      style={
+                        styles.buttonText
+                      }
+                    >
+                      Create Account
+                    </Text>
+                  )}
                 </LinearGradient>
               </Pressable>
             </View>
-
-            <Modal visible={uniModalVisible} transparent animationType="fade" onRequestClose={() => setUniModalVisible(false)}>
-              <View style={styles.modalOverlay}>
-                <View style={styles.modalContent}>
-                  <Text style={styles.modalTitle}>Choose University</Text>
-                  <FlatList 
-                    data={universities}
-                    keyExtractor={(item) => item}
-                    renderItem={({item}) => (
-                      <SelectionItem 
-                        item={item} 
-                        selectedValue={form.university} 
-                        onSelect={(val) => { setForm({...form, university: val}); setUniModalVisible(false); }} 
-                      />
-                    )}
-                  />
-                </View>
-              </View>
-            </Modal>
-
-            <Modal visible={sponModalVisible} transparent animationType="fade" onRequestClose={() => setSponModalVisible(false)}>
-              <View style={styles.modalOverlay}>
-                <View style={styles.modalContent}>
-                  <Text style={styles.modalTitle}>Select Funding Type</Text>
-                  <FlatList 
-                    data={fundingTypes}
-                    keyExtractor={(item) => item}
-                    renderItem={({item}) => (
-                      <SelectionItem 
-                        item={item} 
-                        selectedValue={form.fundingType} 
-                        onSelect={(val) => { setForm({...form, fundingType: val}); setSponModalVisible(false); }} 
-                      />
-                    )}
-                  />
-                </View>
-              </View>
-            </Modal>
-
           </ScrollView>
+
+          {/* UNIVERSITY MODAL */}
+
+          <Modal
+            visible={
+              uniModalVisible
+            }
+            transparent
+            animationType="fade"
+          >
+            <View
+              style={
+                styles.modalOverlay
+              }
+            >
+              <View
+                style={
+                  styles.modalCard
+                }
+              >
+                <Text
+                  style={
+                    styles.modalTitle
+                  }
+                >
+                  Choose University
+                </Text>
+
+                <FlatList
+                  data={
+                    UNIVERSITIES
+                  }
+                  keyExtractor={(
+                    item
+                  ) => item}
+                  renderItem={({
+                    item,
+                  }) => (
+                    <SelectionItem
+                      item={item}
+                      selectedValue={
+                        form.university
+                      }
+                      onSelect={(
+                        value
+                      ) => {
+                        updateField(
+                          'university',
+                          value
+                        );
+
+                        setUniModalVisible(
+                          false
+                        );
+                      }}
+                    />
+                  )}
+                />
+              </View>
+            </View>
+          </Modal>
+
+          {/* FUNDING MODAL */}
+
+          <Modal
+            visible={
+              fundingModalVisible
+            }
+            transparent
+            animationType="fade"
+          >
+            <View
+              style={
+                styles.modalOverlay
+              }
+            >
+              <View
+                style={
+                  styles.modalCard
+                }
+              >
+                <Text
+                  style={
+                    styles.modalTitle
+                  }
+                >
+                  Funding Type
+                </Text>
+
+                <FlatList
+                  data={
+                    FUNDING_TYPES
+                  }
+                  keyExtractor={(
+                    item
+                  ) => item}
+                  renderItem={({
+                    item,
+                  }) => (
+                    <SelectionItem
+                      item={item}
+                      selectedValue={
+                        form.fundingType
+                      }
+                      onSelect={(
+                        value
+                      ) => {
+                        updateField(
+                          'fundingType',
+                          value
+                        );
+
+                        setFundingModalVisible(
+                          false
+                        );
+                      }}
+                    />
+                  )}
+                />
+              </View>
+            </View>
+          </Modal>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </LinearGradient>
   );
 }
 
+/*
+|--------------------------------------------------------------------------
+| STYLES
+|--------------------------------------------------------------------------
+*/
+
 const styles = StyleSheet.create({
-  background: { flex: 1 },
-  scrollContainer: { paddingHorizontal: 32, paddingTop: 20, paddingBottom: 40 },
-  backButton: { width: 45, height: 45, borderRadius: 15, backgroundColor: 'rgba(255, 255, 255, 0.5)', justifyContent: 'center', alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: '#ffffff' },
-  header: { marginBottom: 30 },
-  welcomeTitle: { fontSize: 44, color: '#1e293b', fontWeight: 'bold', lineHeight: 48 },
-  welcomeSubtitle: { fontSize: 17, color: '#64748b', fontWeight: '600', marginTop: 8 },
-  inputGroup: { marginBottom: 18 },
-  inputLabel: { fontSize: 11, fontWeight: 'bold', color: '#64748b', marginBottom: 8, letterSpacing: 1 },
-  input: { backgroundColor: 'rgba(255, 255, 255, 0.77)', height: 60, borderRadius: 22, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1.5, borderColor: '#ffffff' },
-  passwordContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255, 255, 255, 0.77)', borderRadius: 22, borderWidth: 1.5, borderColor: '#ffffff', height: 60, overflow: 'hidden' },
-  rawInput: { flex: 1, paddingHorizontal: 20, height: '100%', fontSize: 15, color: '#1e293b', fontWeight: '600' },
-  eyeIcon: { paddingHorizontal: 15, height: 60, justifyContent: 'center' },
-  strengthRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, paddingHorizontal: 5 },
-  barBg: { flex: 1, height: 4, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 2, marginRight: 10 },
-  barFill: { height: '100%', borderRadius: 2 },
-  strengthLabel: { fontSize: 10, fontWeight: 'bold', width: 40 },
-  inputText: { fontSize: 15, color: '#1e293b', fontWeight: '600' },
-  signUpButton: { height: 64, borderRadius: 24, justifyContent: 'center', alignItems: 'center', marginTop: 15 },
-  signUpButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  errorText: { color: '#ef4444', textAlign: 'center', fontWeight: 'bold', marginBottom: 10 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(30, 41, 59, 0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  modalContent: { width: '100%', backgroundColor: '#f1f5f9', borderRadius: 30, padding: 25, maxHeight: '70%' },
-  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#1e293b', marginBottom: 20, textAlign: 'center' },
-  modalItem: { paddingVertical: 15, paddingHorizontal: 20, borderRadius: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  modalItemSelected: { backgroundColor: 'rgba(255,255,255,0.8)' },
-  modalItemText: { fontSize: 16, fontWeight: '600', color: '#64748b' },
-  modalItemTextSelected: { color: '#1e293b' },
+  container: {
+    flex: 1,
+  },
+
+  safe: {
+    flex: 1,
+  },
+
+  scroll: {
+    paddingHorizontal: 28,
+    paddingBottom: 50,
+  },
+
+  backBtn: {
+    width: 50,
+    height: 50,
+    borderRadius: 16,
+    backgroundColor:
+      'rgba(255,255,255,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 10,
+    marginBottom: 24,
+  },
+
+  header: {
+    marginBottom: 30,
+  },
+
+  title: {
+    fontSize: 46,
+    fontWeight: '900',
+    color: '#1e293b',
+    lineHeight: 48,
+  },
+
+  subtitle: {
+    marginTop: 10,
+    color: '#64748b',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
+  form: {},
+
+  error: {
+    color: '#ef4444',
+    fontWeight: '700',
+    marginBottom: 18,
+    textAlign: 'center',
+  },
+
+  group: {
+    marginBottom: 18,
+  },
+
+  label: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#64748b',
+    marginBottom: 8,
+    letterSpacing: 1,
+  },
+
+  input: {
+    height: 62,
+    borderRadius: 24,
+    backgroundColor:
+      'rgba(255,255,255,0.75)',
+    borderWidth: 1.5,
+    borderColor:
+      'rgba(255,255,255,0.9)',
+    paddingHorizontal: 20,
+    color: '#1e293b',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+
+  passwordWrap: {
+    height: 62,
+    borderRadius: 24,
+    backgroundColor:
+      'rgba(255,255,255,0.75)',
+    borderWidth: 1.5,
+    borderColor:
+      'rgba(255,255,255,0.9)',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  passwordInput: {
+    flex: 1,
+    paddingHorizontal: 20,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1e293b',
+  },
+
+  eyeBtn: {
+    width: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  strengthRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+
+  barBg: {
+    flex: 1,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor:
+      'rgba(255,255,255,0.4)',
+    overflow: 'hidden',
+    marginRight: 10,
+  },
+
+  barFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+
+  strengthText: {
+    fontSize: 11,
+    fontWeight: '700',
+    width: 50,
+  },
+
+  select: {
+    height: 62,
+    borderRadius: 24,
+    backgroundColor:
+      'rgba(255,255,255,0.75)',
+    borderWidth: 1.5,
+    borderColor:
+      'rgba(255,255,255,0.9)',
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent:
+      'space-between',
+  },
+
+  selectText: {
+    color: '#1e293b',
+    fontWeight: '600',
+    fontSize: 15,
+  },
+
+  button: {
+    height: 64,
+    borderRadius: 26,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+
+  buttonText: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor:
+      'rgba(15,23,42,0.45)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+
+  modalCard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 32,
+    padding: 24,
+    maxHeight: '70%',
+  },
+
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#1e293b',
+    marginBottom: 18,
+    textAlign: 'center',
+  },
+
+  modalItem: {
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    borderRadius: 18,
+    flexDirection: 'row',
+    justifyContent:
+      'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+
+  modalItemActive: {
+    backgroundColor:
+      'rgba(226,232,240,0.7)',
+  },
+
+  modalItemText: {
+    color: '#64748b',
+    fontWeight: '600',
+    fontSize: 15,
+  },
+
+  modalItemTextActive: {
+    color: '#1e293b',
+    fontWeight: '800',
+  },
 });

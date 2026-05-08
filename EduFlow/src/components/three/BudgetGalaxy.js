@@ -1,148 +1,582 @@
-import React, { useMemo, useRef, useEffect } from 'react';
-import { View, StyleSheet } from 'react-native';
-import { Canvas, useFrame } from '@react-three/fiber/native';
+// components/three/BudgetGalaxy.js
+
+import React, {
+  useMemo,
+  useRef,
+} from 'react';
+
+import {
+  View,
+  StyleSheet,
+} from 'react-native';
+
+import {
+  Canvas,
+  useFrame,
+} from '@react-three/fiber/native';
+
 import * as THREE from 'three';
 
-function lerp(a, b, t) {
-  return a + (b - a) * t;
+/* =========================================================
+   SAFE HELPERS
+========================================================= */
+
+function safeNumber(value, fallback = 0) {
+  const num = Number(value);
+
+  return Number.isFinite(num)
+    ? num
+    : fallback;
 }
 
-function Scene({
-  mode,
-  budgetProgress,
-  scholarshipUrgency,
-  academicRisk,
-  engagement,
+function safeColor(
+  value,
+  fallback
+) {
+  if (
+    typeof value !== 'string'
+  ) {
+    return fallback;
+  }
+
+  return value;
+}
+
+/* =========================================================
+   PARTICLES
+========================================================= */
+
+function ParticleField({
+  radius = 2.5,
+  count = 100,
+  color = '#ffffff',
+  speed = 0.1,
+  size = 0.02,
+  tilt = 0,
 }) {
-  const group = useRef();
+  const ref = useRef();
 
-  const target = useMemo(() => {
-    // Each mode nudges the scene differently.
-    const base = {
-      hue: 180,
-      pulse: 1,
-      orbitSpeed: 0.9,
-      glow: 0.35,
-    };
-    if (mode === 'scholarship') return { ...base, hue: 280, pulse: 1.4, orbitSpeed: 1.2, glow: 0.65 };
-    if (mode === 'academic') return { ...base, hue: 210, pulse: 1.25, orbitSpeed: 1.0, glow: 0.5 };
-    if (mode === 'engagement') return { ...base, hue: 140, pulse: 1.6, orbitSpeed: 1.25, glow: 0.7 };
-    return base;
-  }, [mode]);
+  const positions = useMemo(() => {
+    const arr = [];
 
-  useFrame((state, delta) => {
-    if (!group.current) return;
+    for (let i = 0; i < count; i++) {
+      const angle =
+        (i / count) *
+        Math.PI *
+        2;
 
-    const t = state.clock.getElapsedTime();
+      const r =
+        radius +
+        (Math.random() - 0.5) *
+          0.2;
 
-    // Base motion
-    group.current.rotation.y = t * 0.25 * target.orbitSpeed;
-    group.current.rotation.x = Math.sin(t * 0.35) * 0.12;
-
-    // Widget-driven immersion
-    const risk = academicRisk;
-    const urgency = scholarshipUrgency;
-    const burn = budgetProgress;
-    const energy = engagement;
-
-    const pulse = (0.35 + 0.75 * urgency) * target.pulse;
-
-    group.current.scale.setScalar(lerp(0.95, 1.12, burn * 0.35 + energy * 0.25));
-
-    // Move particles towards “importance”
-    group.current.position.y = Math.sin(t * 1.1 + urgency * 3) * (0.05 + 0.08 * pulse);
-
-    // Light / material updates are done via refs on meshes.
-    const glowMesh = group.current.getObjectByName('glow');
-    if (glowMesh && glowMesh.material) {
-      glowMesh.material.opacity = lerp(0.15, 0.65, urgency * 0.8 + energy * 0.2) * (1 - risk * 0.2);
-      glowMesh.material.color = new THREE.Color().setHSL(target.hue / 360, 0.9, lerp(0.4, 0.65, urgency));
+      arr.push(
+        Math.cos(angle) * r,
+        (Math.random() - 0.5) *
+          0.15,
+        Math.sin(angle) * r
+      );
     }
 
-    const core = group.current.getObjectByName('core');
-    if (core && core.material) {
-      core.material.emissiveIntensity = lerp(0.2, 1.2, urgency) + lerp(0.0, 0.5, burn);
+    return new Float32Array(arr);
+  }, [radius, count]);
+
+  useFrame((state) => {
+    if (!ref.current) return;
+
+    ref.current.rotation.y =
+      state.clock.getElapsedTime() *
+      speed;
+
+    ref.current.rotation.z =
+      tilt;
+  });
+
+  return (
+    <points ref={ref}>
+      <bufferGeometry>
+        <bufferAttribute
+          attach="attributes-position"
+          array={positions}
+          count={
+            positions.length / 3
+          }
+          itemSize={3}
+        />
+      </bufferGeometry>
+
+      <pointsMaterial
+        color={safeColor(
+          color,
+          '#ffffff'
+        )}
+        size={size}
+        transparent
+        opacity={0.65}
+        depthWrite={false}
+      />
+    </points>
+  );
+}
+
+/* =========================================================
+   FLOATING NODE
+========================================================= */
+
+function FloatingNode({
+  position = [0, 0, 0],
+  color = '#ffffff',
+  scale = 0.15,
+  speed = 1,
+}) {
+  const ref = useRef();
+
+  useFrame((state) => {
+    if (!ref.current) return;
+
+    const t =
+      state.clock.getElapsedTime();
+
+    ref.current.position.y =
+      position[1] +
+      Math.sin(t * speed) *
+        0.1;
+
+    ref.current.rotation.y =
+      t * 0.7;
+  });
+
+  return (
+    <mesh
+      ref={ref}
+      position={position}
+      scale={scale}
+    >
+      <sphereGeometry
+        args={[1, 24, 24]}
+      />
+
+      <meshStandardMaterial
+        color={safeColor(
+          color,
+          '#ffffff'
+        )}
+        emissive={safeColor(
+          color,
+          '#ffffff'
+        )}
+        emissiveIntensity={0.45}
+        roughness={0.25}
+        metalness={0.6}
+      />
+    </mesh>
+  );
+}
+
+/* =========================================================
+   MAIN SCENE
+========================================================= */
+
+function Scene(props) {
+  const group = useRef();
+
+  const mode =
+    props?.mode ||
+    'financial';
+
+  const budgetProgress =
+    safeNumber(
+      props?.budgetProgress
+    );
+
+  const scholarshipUrgency =
+    safeNumber(
+      props?.scholarshipUrgency
+    );
+
+  const academicRisk =
+    safeNumber(
+      props?.academicRisk
+    );
+
+  const engagement =
+    safeNumber(
+      props?.engagement
+    );
+
+  const palette = useMemo(() => {
+    const palettes = {
+      financial: {
+        primary: '#708390',
+        secondary: '#D6DDE2',
+        glow: '#AAB8C2',
+        background: '#16232D',
+      },
+
+      academic: {
+        primary: '#8798A5',
+        secondary: '#D6DDE2',
+        glow: '#B7C3CC',
+        background: '#1B2A35',
+      },
+
+      scholarship: {
+        primary: '#5E7381',
+        secondary: '#CCD5DB',
+        glow: '#AEBBC4',
+        background: '#18242E',
+      },
+
+      engagement: {
+        primary: '#465A67',
+        secondary: '#D6DDE2',
+        glow: '#93A5B2',
+        background: '#111C24',
+      },
+    };
+
+    return (
+      palettes[mode] ||
+      palettes.financial
+    );
+  }, [mode]);
+
+  useFrame((state) => {
+    if (!group.current) return;
+
+    const t =
+      state.clock.getElapsedTime();
+
+    group.current.rotation.y =
+      t * 0.16;
+
+    group.current.rotation.x =
+      Math.sin(t * 0.25) *
+      0.06;
+
+    const energy =
+      budgetProgress * 0.3 +
+      scholarshipUrgency * 0.3 +
+      engagement * 0.25 -
+      academicRisk * 0.15;
+
+    const scale =
+      1 + energy * 0.06;
+
+    group.current.scale.set(
+      scale,
+      scale,
+      scale
+    );
+
+    const core =
+      group.current.getObjectByName(
+        'core'
+      );
+
+    if (
+      core &&
+      core.material
+    ) {
+      core.material.emissiveIntensity =
+        0.4 + energy;
+    }
+
+    const glow =
+      group.current.getObjectByName(
+        'glow'
+      );
+
+    if (
+      glow &&
+      glow.material
+    ) {
+      glow.material.opacity =
+        0.08 +
+        scholarshipUrgency *
+          0.4;
     }
   });
 
   return (
-    <group ref={group}>
-      <ambientLight intensity={0.7} />
-      <pointLight position={[0, 0, 6]} intensity={1.1} color={'#ffffff'} />
+    <>
+      {/* LIGHTING */}
+      <ambientLight
+        intensity={0.85}
+      />
 
-      {/* Core */}
-      <mesh name="core" position={[0, 0, 0]}>
-        <torusGeometry args={[1.2, 0.22, 16, 60]} />
-        <meshStandardMaterial
-          color={'#93c5fd'}
-          roughness={0.35}
-          metalness={0.7}
-          emissive={'#34d399'}
-          emissiveIntensity={0.4}
-          transparent
-        />
-      </mesh>
+      <pointLight
+        position={[0, 0, 5]}
+        intensity={1.6}
+        color={safeColor(
+          palette.secondary,
+          '#ffffff'
+        )}
+      />
 
-      {/* Glow shell */}
-      <mesh name="glow" position={[0, 0, 0]} scale={1.35}>
-        <sphereGeometry args={[1.05, 32, 32]} />
-        <meshStandardMaterial
-          color={'#a78bfa'}
-          transparent
-          opacity={0.25}
-          emissive={'#a78bfa'}
-          emissiveIntensity={0.45}
-        />
-      </mesh>
+      <pointLight
+        position={[2, 2, 3]}
+        intensity={0.9}
+        color={safeColor(
+          palette.primary,
+          '#708390'
+        )}
+      />
 
-      {/* Orbiting rings (widget-driven) */}
-      <group>
-        <mesh rotation={[Math.PI / 3, 0, 0]}>
-          <torusGeometry args={[1.8, 0.04, 12, 100]} />
-          <meshBasicMaterial color={'#ffffff'} transparent opacity={0.15} />
+      {/* FOG */}
+      <fog
+        attach="fog"
+        args={[
+          safeColor(
+            palette.background,
+            '#16232D'
+          ),
+          5,
+          13,
+        ]}
+      />
+
+      {/* MAIN GROUP */}
+      <group ref={group}>
+        {/* CORE */}
+        <mesh
+          name="core"
+          position={[0, 0, 0]}
+        >
+          <icosahedronGeometry
+            args={[1.1, 2]}
+          />
+
+          <meshPhysicalMaterial
+            color={safeColor(
+              palette.primary,
+              '#708390'
+            )}
+            emissive={safeColor(
+              palette.primary,
+              '#708390'
+            )}
+            emissiveIntensity={0.6}
+            roughness={0.2}
+            metalness={0.75}
+            clearcoat={1}
+            transparent
+            opacity={0.95}
+          />
         </mesh>
-      </group>
 
-      {/* Budget “energy” arc */}
-      <mesh position={[0, 0.2, 0]} rotation={[0, 0, 0]} scale={1}>
-        <ringGeometry args={[1.05, 1.2, 64]} />
-        <meshBasicMaterial color={'#34d399'} transparent opacity={0.25 + budgetProgress * 0.4} />
-      </mesh>
-    </group>
+        {/* GLOW */}
+        <mesh
+          name="glow"
+          scale={1.5}
+        >
+          <sphereGeometry
+            args={[1.15, 32, 32]}
+          />
+
+          <meshBasicMaterial
+            color={safeColor(
+              palette.glow,
+              '#AAB8C2'
+            )}
+            transparent
+            opacity={0.18}
+          />
+        </mesh>
+
+        {/* MAIN RING */}
+        <mesh
+          rotation={[
+            Math.PI / 2.8,
+            0,
+            0,
+          ]}
+        >
+          <torusGeometry
+            args={[
+              2,
+              0.03,
+              16,
+              160,
+            ]}
+          />
+
+          <meshBasicMaterial
+            color={safeColor(
+              palette.secondary,
+              '#D6DDE2'
+            )}
+            transparent
+            opacity={0.22}
+          />
+        </mesh>
+
+        {/* SECOND RING */}
+        <mesh
+          rotation={[
+            Math.PI / 4,
+            0,
+            Math.PI / 3,
+          ]}
+        >
+          <torusGeometry
+            args={[
+              2.4,
+              0.02,
+              16,
+              120,
+            ]}
+          />
+
+          <meshBasicMaterial
+            color={safeColor(
+              palette.primary,
+              '#708390'
+            )}
+            transparent
+            opacity={0.12}
+          />
+        </mesh>
+
+        {/* PARTICLES */}
+        <ParticleField
+          radius={2.6}
+          count={120}
+          color={safeColor(
+            palette.secondary,
+            '#D6DDE2'
+          )}
+          speed={0.08}
+          size={0.025}
+        />
+
+        <ParticleField
+          radius={3}
+          count={180}
+          color={safeColor(
+            palette.primary,
+            '#708390'
+          )}
+          speed={-0.05}
+          size={0.018}
+          tilt={0.4}
+        />
+
+        {/* FLOATING NODES */}
+        <FloatingNode
+          position={[
+            -2,
+            0.4,
+            0,
+          ]}
+          color={safeColor(
+            palette.primary,
+            '#708390'
+          )}
+          scale={0.14}
+          speed={1.2}
+        />
+
+        <FloatingNode
+          position={[
+            2,
+            -0.5,
+            0,
+          ]}
+          color={safeColor(
+            palette.secondary,
+            '#D6DDE2'
+          )}
+          scale={0.11}
+          speed={1.5}
+        />
+
+        <FloatingNode
+          position={[
+            0,
+            2,
+            0,
+          ]}
+          color={safeColor(
+            palette.glow,
+            '#AAB8C2'
+          )}
+          scale={0.08}
+          speed={1.8}
+        />
+      </group>
+    </>
   );
 }
 
-export default function BudgetGalaxy(props) {
-  const {
-    mode = 'financial',
-    budgetProgress = 0,
-    scholarshipUrgency = 0,
-    academicRisk = 0,
-    engagement = 0,
-  } = props;
+/* =========================================================
+   COMPONENT
+========================================================= */
 
+export default function BudgetGalaxy({
+  mode = 'financial',
+  budgetProgress = 0,
+  scholarshipUrgency = 0,
+  academicRisk = 0,
+  engagement = 0,
+}) {
   return (
     <View style={styles.container}>
       <Canvas
-        dpr={1}
-        camera={{ position: [0, 0, 5.2], fov: 45 }}
-        gl={{ antialias: true, alpha: true, powerPreference: 'low-power' }}
+        dpr={1.5}
+        camera={{
+          position: [0, 0, 6],
+          fov: 42,
+        }}
+        gl={{
+          antialias: true,
+          alpha: true,
+          powerPreference:
+            'high-performance',
+        }}
       >
         <Scene
           mode={mode}
-          budgetProgress={budgetProgress}
-          scholarshipUrgency={scholarshipUrgency}
-          academicRisk={academicRisk}
+          budgetProgress={
+            budgetProgress
+          }
+          scholarshipUrgency={
+            scholarshipUrgency
+          }
+          academicRisk={
+            academicRisk
+          }
           engagement={engagement}
         />
       </Canvas>
+
+      {/* subtle overlay */}
+      <View
+        pointerEvents="none"
+        style={styles.overlay}
+      />
     </View>
   );
 }
 
+/* =========================================================
+   STYLES
+========================================================= */
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+
+    backgroundColor:
+      '#16232D',
+
+    overflow: 'hidden',
+  },
+
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+
+    backgroundColor:
+      'rgba(214,221,226,0.03)',
   },
 });
-
