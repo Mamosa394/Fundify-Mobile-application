@@ -3,30 +3,118 @@
 import {
   doc,
   getDoc,
+  setDoc,
+  serverTimestamp,
 } from 'firebase/firestore';
+
+import {
+  onAuthStateChanged,
+} from 'firebase/auth';
 
 import { auth, db } from './firebase';
 
 /*
 |--------------------------------------------------------------------------
-| Dashboard Service
+| AUTH HELPER
 |--------------------------------------------------------------------------
-| Centralized dashboard data loader.
-| Pulls:
-| - User profile
-| - Academic data
-| - Financial data
-| - Scholarship data
-| - Engagement data
+*/
+
+function getCurrentUser() {
+  return new Promise((resolve) => {
+    const unsubscribe =
+      onAuthStateChanged(
+        auth,
+        (user) => {
+          unsubscribe();
+          resolve(user);
+        }
+      );
+  });
+}
+
+/*
+|--------------------------------------------------------------------------
+| DATE HELPERS
+|--------------------------------------------------------------------------
+*/
+
+function daysBetween(a, b) {
+  const oneDay =
+    1000 * 60 * 60 * 24;
+
+  return Math.floor(
+    (b.getTime() - a.getTime()) /
+      oneDay
+  );
+}
+
+function getDaysInMonth(date) {
+  return new Date(
+    date.getFullYear(),
+    date.getMonth() + 1,
+    0
+  ).getDate();
+}
+
+/*
+|--------------------------------------------------------------------------
+| INITIALIZE USER BUDGET
+|--------------------------------------------------------------------------
+*/
+
+export async function initializeUserBudget(
+  amount
+) {
+  const currentUser =
+    await getCurrentUser();
+
+  if (!currentUser) {
+    throw new Error(
+      'No authenticated user'
+    );
+  }
+
+  const uid = currentUser.uid;
+
+  const financialRef = doc(
+    db,
+    'financials',
+    uid
+  );
+
+  await setDoc(
+    financialRef,
+    {
+      currentBalance:
+        Number(amount),
+
+      cycleStartDate:
+        new Date().toISOString(),
+
+      updatedAt:
+        serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  return true;
+}
+
+/*
+|--------------------------------------------------------------------------
+| DASHBOARD DATA
 |--------------------------------------------------------------------------
 */
 
 export async function getDashboardData() {
   try {
-    const currentUser = auth.currentUser;
+    const currentUser =
+      await getCurrentUser();
 
     if (!currentUser) {
-      throw new Error('No authenticated user');
+      throw new Error(
+        'No authenticated user'
+      );
     }
 
     const uid = currentUser.uid;
@@ -37,92 +125,244 @@ export async function getDashboardData() {
     |--------------------------------------------------------------------------
     */
 
-    const userRef = doc(db, 'students', uid);
+    const userRef = doc(
+      db,
+      'students',
+      uid
+    );
 
-    const userSnap = await getDoc(userRef);
+    const userSnap =
+      await getDoc(userRef);
 
-    let profile = {
+    /*
+    |--------------------------------------------------------------------------
+    | OTHER COLLECTIONS
+    |--------------------------------------------------------------------------
+    */
+
+    const academicRef = doc(
+      db,
+      'academics',
+      uid
+    );
+
+    const scholarshipRef = doc(
+      db,
+      'scholarships',
+      uid
+    );
+
+    const engagementRef = doc(
+      db,
+      'engagements',
+      uid
+    );
+
+    const financialRef = doc(
+      db,
+      'financials',
+      uid
+    );
+
+    const [
+      academicSnap,
+      scholarshipSnap,
+      engagementSnap,
+      financialSnap,
+    ] = await Promise.all([
+      getDoc(academicRef),
+      getDoc(scholarshipRef),
+      getDoc(engagementRef),
+      getDoc(financialRef),
+    ]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | PROFILE
+    |--------------------------------------------------------------------------
+    */
+
+    const profileData =
+      userSnap.exists()
+        ? userSnap.data()
+        : {};
+
+    const profile = {
       uid,
-      name: 'Student',
-      university: '',
-      fundingType: '',
-      studentNumber: '',
-      email: currentUser.email || '',
+
+      name:
+        profileData.name ||
+        currentUser.displayName ||
+        'Student',
+
+      university:
+        profileData.university ||
+        '',
+
+      fundingType:
+        profileData.fundingType ||
+        '',
+
+      studentNumber:
+        profileData.studentNumber ||
+        '',
+
+      email:
+        currentUser.email || '',
     };
 
-    if (userSnap.exists()) {
-      const data = userSnap.data();
+    /*
+    |--------------------------------------------------------------------------
+    | FINANCIAL SMART BUDGETING
+    |--------------------------------------------------------------------------
+    */
 
-      profile = {
-        uid,
+    let financial = {
+      monthlyBudget: 0,
+      spentToDate: 0,
+      currentBalance: 0,
+      remainingDays: 0,
+      dailySafeSpend: 0,
+    };
 
-        name:
-          data.name ||
-          currentUser.displayName ||
-          'Student',
+    let needsBalanceSetup = false;
 
-        university:
-          data.university || '',
+    if (!financialSnap.exists()) {
+      needsBalanceSetup = true;
+    } else {
+      const financialData =
+        financialSnap.data();
 
-        fundingType:
-          data.fundingType || '',
+      if (
+        !financialData.currentBalance ||
+        !financialData.cycleStartDate
+      ) {
+        needsBalanceSetup = true;
+      } else {
+        const currentBalance =
+          Number(
+            financialData.currentBalance
+          );
 
-        studentNumber:
-          data.studentNumber || '',
+        const cycleStartDate =
+          new Date(
+            financialData.cycleStartDate
+          );
 
-        email:
-          currentUser.email || '',
-      };
+        const now = new Date();
+
+        const daysInMonth =
+          getDaysInMonth(now);
+
+        const currentDay =
+          now.getDate();
+
+        const remainingDays =
+          daysInMonth -
+          currentDay +
+          1;
+
+        const elapsedDays =
+          daysBetween(
+            cycleStartDate,
+            now
+          );
+
+        /*
+        |--------------------------------------------------------------------------
+        | SMART MONTHLY PROJECTION
+        |--------------------------------------------------------------------------
+        */
+
+        const projectedMonthlyBudget =
+          Math.round(
+            (currentBalance /
+              remainingDays) *
+              daysInMonth
+          );
+
+        const projectedSpent =
+          Math.max(
+            projectedMonthlyBudget -
+              currentBalance,
+            0
+          );
+
+        financial = {
+          currentBalance,
+
+          monthlyBudget:
+            projectedMonthlyBudget,
+
+          spentToDate:
+            projectedSpent,
+
+          remainingDays,
+
+          elapsedDays,
+
+          dailySafeSpend:
+            Number(
+              (
+                currentBalance /
+                remainingDays
+              ).toFixed(2)
+            ),
+        };
+      }
     }
 
     /*
     |--------------------------------------------------------------------------
-    | MOCKED DASHBOARD DATA
-    |--------------------------------------------------------------------------
-    | Replace later with real firestore collections
+    | ACADEMICS
     |--------------------------------------------------------------------------
     */
 
-    const dashboard = {
+    const academic =
+      academicSnap.exists()
+        ? academicSnap.data()
+        : {
+            gpa: 0,
+            attendancePct: 0,
+          };
+
+    /*
+    |--------------------------------------------------------------------------
+    | SCHOLARSHIPS
+    |--------------------------------------------------------------------------
+    */
+
+    const scholarship =
+      scholarshipSnap.exists()
+        ? scholarshipSnap.data()
+        : {
+            nextDeadlineDays: 0,
+            progressPct: 0,
+            stage: '',
+          };
+
+    /*
+    |--------------------------------------------------------------------------
+    | ENGAGEMENTS
+    |--------------------------------------------------------------------------
+    */
+
+    const engagement =
+      engagementSnap.exists()
+        ? engagementSnap.data()
+        : {
+            streakDays: 0,
+            nextBestAction: '',
+          };
+
+    return {
       profile,
-
-      financial: {
-        monthlyBudget: 2400,
-        spentToDate: 1375,
-
-        upcomingExpense: {
-          label: 'Transport top-up',
-          amount: 180,
-          inDays: 5,
-        },
-      },
-
-      academic: {
-        gpa: 3.42,
-        attendancePct: 78,
-
-        nextAssignment: {
-          label: 'Database Systems',
-          dueInDays: 3,
-        },
-      },
-
-      scholarship: {
-        nextDeadlineDays: 9,
-        progressPct: 62,
-        stage:
-          'Awaiting payment confirmation',
-      },
-
-      engagement: {
-        streakDays: 6,
-
-        nextBestAction:
-          'Submit missing document bundle',
-      },
+      financial,
+      academic,
+      scholarship,
+      engagement,
+      needsBalanceSetup,
     };
-
-    return dashboard;
   } catch (error) {
     console.log(
       '[DashboardService] Error:',
@@ -146,7 +386,10 @@ export function calculateBudgetProgress(
 
   return Math.min(
     financial.spentToDate /
-      financial.monthlyBudget,
+      Math.max(
+        financial.monthlyBudget,
+        1
+      ),
     1
   );
 }
@@ -160,7 +403,8 @@ export function calculateScholarshipUrgency(
     0,
     Math.min(
       1 -
-        scholarship.nextDeadlineDays / 14,
+        scholarship.nextDeadlineDays /
+          14,
       1
     )
   );
@@ -174,7 +418,9 @@ export function calculateAcademicRisk(
   return Math.max(
     0,
     Math.min(
-      (80 - academic.attendancePct) / 25,
+      (80 -
+        academic.attendancePct) /
+        25,
       1
     )
   );

@@ -15,7 +15,14 @@ import {
   Dimensions,
   StatusBar,
   ActivityIndicator,
+  TextInput,
+  Alert,
+  Platform,
 } from 'react-native';
+
+import {
+  SafeAreaView,
+} from 'react-native-safe-area-context';
 
 import { BlurView } from 'expo-blur';
 
@@ -27,21 +34,23 @@ import {
   Ionicons,
 } from '@expo/vector-icons';
 
-import {
-  SafeAreaView,
-} from 'react-native-safe-area-context';
-
 import NeuralCore from '../../components/three/NeuralCore';
+import ScreenWrapper from '../../components/layout/ScreenWrapper';
 
 import {
   getDashboardData,
+  initializeUserBudget,
   calculateBudgetProgress,
   calculateScholarshipUrgency,
   calculateAcademicRisk,
   calculateEngagementIntensity,
 } from '../../services/DashboardService';
 
-const { width } = Dimensions.get('window');
+const { width, height } =
+  Dimensions.get('window');
+
+const isSmallDevice =
+  width < 390;
 
 const COLORS = {
   bg: '#ECEFF1',
@@ -72,7 +81,9 @@ const COLORS = {
 };
 
 function fmtMoney(n) {
-  return `M${Number(n).toLocaleString()}`;
+  return `M${Number(
+    n || 0
+  ).toLocaleString()}`;
 }
 
 export default function DashboardScreen() {
@@ -84,6 +95,12 @@ export default function DashboardScreen() {
 
   const [activeWidget, setActiveWidget] =
     useState('financial');
+
+  const [balanceInput, setBalanceInput] =
+    useState('');
+
+  const [savingBalance, setSavingBalance] =
+    useState(false);
 
   useEffect(() => {
     loadDashboard();
@@ -101,6 +118,41 @@ export default function DashboardScreen() {
       console.log(err);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleInitializeBudget() {
+    try {
+      if (!balanceInput) {
+        Alert.alert(
+          'Missing Balance',
+          'Please enter your available balance.'
+        );
+
+        return;
+      }
+
+      setSavingBalance(true);
+
+      await initializeUserBudget(
+        Number(balanceInput)
+      );
+
+      const refreshed =
+        await getDashboardData();
+
+      setDashboard(refreshed);
+
+      setBalanceInput('');
+    } catch (error) {
+      console.log(error);
+
+      Alert.alert(
+        'Error',
+        'Failed to initialize budget.'
+      );
+    } finally {
+      setSavingBalance(false);
     }
   }
 
@@ -174,6 +226,223 @@ export default function DashboardScreen() {
     );
   }
 
+  /*
+  |--------------------------------------------------------------------------
+  | BALANCE SETUP SCREEN
+  |--------------------------------------------------------------------------
+  */
+
+  if (
+    dashboard?.needsBalanceSetup
+  ) {
+    return (
+      <ScreenWrapper
+        backgroundColor={COLORS.bg}
+        barStyle="dark-content"
+        keyboardAvoiding
+      >
+        <StatusBar
+          barStyle="dark-content"
+        />
+
+        <View
+          style={styles.cyanGlow}
+        />
+
+        <View
+          style={styles.violetGlow}
+        />
+
+        <View
+          style={styles.greenGlow}
+        />
+
+        <View
+          style={
+            styles.setupContainer
+          }
+        >
+          <BlurView
+            intensity={40}
+            tint="light"
+            style={styles.setupCard}
+          >
+            <LinearGradient
+              colors={[
+                'rgba(125,211,252,0.18)',
+                'rgba(196,181,253,0.08)',
+                'transparent',
+              ]}
+              style={
+                styles.commandGlow
+              }
+            />
+
+            <View
+              style={
+                styles.setupHeader
+              }
+            >
+              <View
+                style={
+                  styles.setupIconWrap
+                }
+              >
+                <LinearGradient
+                  colors={[
+                    COLORS.cyan,
+                    COLORS.violet,
+                  ]}
+                  style={
+                    styles.setupIconGradient
+                  }
+                >
+                  <Ionicons
+                    name="wallet-outline"
+                    size={28}
+                    color="#000"
+                  />
+                </LinearGradient>
+              </View>
+
+              <View
+                style={
+                  styles.livePill
+                }
+              >
+                <View
+                  style={
+                    styles.liveDot
+                  }
+                />
+
+                <Text
+                  style={
+                    styles.liveText
+                  }
+                >
+                  SMART MODE
+                </Text>
+              </View>
+            </View>
+
+            <Text
+              style={
+                styles.setupTitle
+              }
+            >
+              Smart Budget
+              Calibration
+            </Text>
+
+            <Text
+              style={
+                styles.setupText
+              }
+            >
+              Enter your current
+              available balance to
+              calibrate your budget
+              intelligence for the
+              rest of the month.
+            </Text>
+
+            <View
+              style={
+                styles.inputShell
+              }
+            >
+              <Text
+                style={
+                  styles.currencyPrefix
+                }
+              >
+                M
+              </Text>
+
+              <TextInput
+                value={balanceInput}
+                onChangeText={
+                  setBalanceInput
+                }
+                keyboardType="numeric"
+                placeholder="0.00"
+                placeholderTextColor="#999"
+                style={
+                  styles.balanceInput
+                }
+              />
+            </View>
+
+            <Pressable
+              disabled={
+                savingBalance
+              }
+              onPress={
+                handleInitializeBudget
+              }
+              style={
+                styles.saveButton
+              }
+            >
+              <LinearGradient
+                colors={[
+                  COLORS.cyan,
+                  COLORS.violet,
+                ]}
+                start={{
+                  x: 0,
+                  y: 0,
+                }}
+                end={{
+                  x: 1,
+                  y: 1,
+                }}
+                style={
+                  styles.saveButtonGradient
+                }
+              >
+                {savingBalance ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <>
+                    <Ionicons
+                      name="sparkles-outline"
+                      size={18}
+                      color="#000"
+                      style={{
+                        marginRight: 10,
+                      }}
+                    />
+
+                    <Text
+                      style={
+                        styles.saveButtonText
+                      }
+                    >
+                      Initialize
+                      Budget
+                    </Text>
+                  </>
+                )}
+              </LinearGradient>
+            </Pressable>
+
+            <Text
+              style={
+                styles.setupFooter
+              }
+            >
+              Your budget adapts
+              dynamically throughout
+              the month.
+            </Text>
+          </BlurView>
+        </View>
+      </ScreenWrapper>
+    );
+  }
+
   const { profile } = dashboard;
 
   const telemetry = [
@@ -183,7 +452,8 @@ export default function DashboardScreen() {
       label: 'ACADEMIC',
 
       value:
-        dashboard.academic.gpa,
+        dashboard?.academic
+          ?.gpa || 0,
 
       sub: 'Current GPA',
 
@@ -198,10 +468,8 @@ export default function DashboardScreen() {
       label: 'BALANCE',
 
       value: fmtMoney(
-        dashboard.financial
-          .monthlyBudget -
-          dashboard.financial
-            .spentToDate
+        dashboard?.financial
+          ?.currentBalance
       ),
 
       sub: 'Available funds',
@@ -216,7 +484,10 @@ export default function DashboardScreen() {
 
       label: 'ATTENDANCE',
 
-      value: `${dashboard.academic.attendancePct}%`,
+      value: `${
+        dashboard?.academic
+          ?.attendancePct || 0
+      }%`,
 
       sub: 'Live presence',
 
@@ -230,7 +501,10 @@ export default function DashboardScreen() {
 
       label: 'DEADLINE',
 
-      value: `${dashboard.scholarship.nextDeadlineDays}d`,
+      value: `${
+        dashboard?.scholarship
+          ?.nextDeadlineDays || 0
+      }d`,
 
       sub: 'Submission window',
 
@@ -246,11 +520,11 @@ export default function DashboardScreen() {
         barStyle="dark-content"
       />
 
-      {/* AMBIENT LIGHT */}
-
       <View style={styles.cyanGlow} />
 
-      <View style={styles.violetGlow} />
+      <View
+        style={styles.violetGlow}
+      />
 
       <View style={styles.greenGlow} />
 
@@ -262,29 +536,41 @@ export default function DashboardScreen() {
           styles.content
         }
       >
-        {/* TOP */}
+        {/* TOP BAR */}
 
         <View style={styles.topBar}>
           <View
-            style={styles.brandWrap}
+            style={
+              styles.brandWrap
+            }
           >
             <View
-              style={styles.brandDot}
+              style={
+                styles.brandDot
+              }
             />
 
-            <Text style={styles.brand}>
+            <Text
+              style={styles.brand}
+            >
               EDUFLOW
             </Text>
           </View>
 
           <View
-            style={styles.topRight}
+            style={
+              styles.topRight
+            }
           >
             <View
-              style={styles.livePill}
+              style={
+                styles.livePill
+              }
             >
               <View
-                style={styles.liveDot}
+                style={
+                  styles.liveDot
+                }
               />
 
               <Text
@@ -304,9 +590,11 @@ export default function DashboardScreen() {
                   styles.avatarText
                 }
               >
-                {profile.name
+                {profile?.name
                   ?.split(' ')
-                  ?.map((n) => n[0])
+                  ?.map(
+                    (n) => n[0]
+                  )
                   ?.join('')
                   ?.slice(0, 2)
                   ?.toUpperCase()}
@@ -318,18 +606,23 @@ export default function DashboardScreen() {
         {/* USER */}
 
         <View style={styles.userRow}>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={styles.title}>
               Welcome back,
             </Text>
 
-            <Text style={styles.user}>
-              {profile.name}
+            <Text
+              numberOfLines={1}
+              style={styles.user}
+            >
+              {profile?.name}
             </Text>
           </View>
 
           <View
-            style={styles.statusBlock}
+            style={
+              styles.statusBlock
+            }
           >
             <Text
               style={
@@ -349,7 +642,7 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* COMMAND CENTER */}
+        {/* COMMAND CARD */}
 
         <BlurView
           intensity={40}
@@ -370,7 +663,11 @@ export default function DashboardScreen() {
               styles.commandTop
             }
           >
-            <View style={{ flex: 1 }}>
+            <View
+              style={{
+                flex: 1,
+              }}
+            >
               <Text
                 style={
                   styles.commandLabel
@@ -380,17 +677,16 @@ export default function DashboardScreen() {
               </Text>
 
               <Text
+                adjustsFontSizeToFit
+                numberOfLines={1}
                 style={
                   styles.commandValue
                 }
               >
                 {fmtMoney(
                   dashboard
-                    .financial
-                    .monthlyBudget -
-                    dashboard
-                      .financial
-                      .spentToDate
+                    ?.financial
+                    ?.currentBalance
                 )}
               </Text>
 
@@ -464,7 +760,7 @@ export default function DashboardScreen() {
                   styles.footerLabel
                 }
               >
-                Spending
+                Daily Safe Spend
               </Text>
 
               <Text
@@ -472,7 +768,11 @@ export default function DashboardScreen() {
                   styles.footerValue
                 }
               >
-                Stable
+                {fmtMoney(
+                  dashboard
+                    ?.financial
+                    ?.dailySafeSpend
+                )}
               </Text>
             </View>
 
@@ -486,7 +786,7 @@ export default function DashboardScreen() {
                   styles.footerLabel
                 }
               >
-                Academic
+                Remaining Days
               </Text>
 
               <Text
@@ -494,7 +794,11 @@ export default function DashboardScreen() {
                   styles.footerValue
                 }
               >
-                Healthy
+                {
+                  dashboard
+                    ?.financial
+                    ?.remainingDays
+                }
               </Text>
             </View>
 
@@ -525,7 +829,9 @@ export default function DashboardScreen() {
         {/* TELEMETRY */}
 
         <View
-          style={styles.telemetryWrap}
+          style={
+            styles.telemetryWrap
+          }
         >
           {telemetry.map((item) => {
             const active =
@@ -581,7 +887,9 @@ export default function DashboardScreen() {
                     <Ionicons
                       name={item.icon}
                       size={18}
-                      color={item.color}
+                      color={
+                        item.color
+                      }
                     />
                   </View>
 
@@ -597,6 +905,8 @@ export default function DashboardScreen() {
                 </View>
 
                 <Text
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
                   style={
                     styles.telemetryValue
                   }
@@ -642,7 +952,9 @@ export default function DashboardScreen() {
 
         {/* NEURAL CORE */}
 
-        <View style={styles.coreSection}>
+        <View
+          style={styles.coreSection}
+        >
           <View
             style={styles.coreTop}
           >
@@ -680,7 +992,9 @@ export default function DashboardScreen() {
             </View>
           </View>
 
-          <View style={styles.coreCard}>
+          <View
+            style={styles.coreCard}
+          >
             <NeuralCore
               mode={activeWidget}
               budgetProgress={
@@ -701,7 +1015,9 @@ export default function DashboardScreen() {
               style={styles.hudTop}
             >
               <View
-                style={styles.hudBox}
+                style={
+                  styles.hudBox
+                }
               >
                 <Text
                   style={
@@ -721,7 +1037,9 @@ export default function DashboardScreen() {
               </View>
 
               <View
-                style={styles.hudBox}
+                style={
+                  styles.hudBox
+                }
               >
                 <Text
                   style={
@@ -738,8 +1056,8 @@ export default function DashboardScreen() {
                 >
                   {
                     dashboard
-                      .academic
-                      .attendancePct
+                      ?.academic
+                      ?.attendancePct
                   }
                   %
                 </Text>
@@ -754,41 +1072,20 @@ export default function DashboardScreen() {
               <View
                 style={styles.signal}
               >
-                <View
-                  style={[
-                    styles.signalBar,
-                    {
-                      height: 18,
-                    },
-                  ]}
-                />
-
-                <View
-                  style={[
-                    styles.signalBar,
-                    {
-                      height: 30,
-                    },
-                  ]}
-                />
-
-                <View
-                  style={[
-                    styles.signalBar,
-                    {
-                      height: 42,
-                    },
-                  ]}
-                />
-
-                <View
-                  style={[
-                    styles.signalBar,
-                    {
-                      height: 28,
-                    },
-                  ]}
-                />
+                {[18, 30, 42, 28].map(
+                  (bar, index) => (
+                    <View
+                      key={index}
+                      style={[
+                        styles.signalBar,
+                        {
+                          height:
+                            bar,
+                        },
+                      ]}
+                    />
+                  )
+                )}
               </View>
 
               <Text
@@ -803,7 +1100,9 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        <View style={{ height: 120 }} />
+        <View
+          style={{ height: 120 }}
+        />
       </ScrollView>
     </SafeAreaView>
   );
@@ -823,8 +1122,8 @@ const styles = StyleSheet.create({
 
   cyanGlow: {
     position: 'absolute',
-    width: 240,
-    height: 240,
+    width: width * 0.6,
+    height: width * 0.6,
     borderRadius: 999,
     backgroundColor:
       'rgba(125,211,252,0.18)',
@@ -834,8 +1133,8 @@ const styles = StyleSheet.create({
 
   violetGlow: {
     position: 'absolute',
-    width: 220,
-    height: 220,
+    width: width * 0.55,
+    height: width * 0.55,
     borderRadius: 999,
     backgroundColor:
       'rgba(196,181,253,0.14)',
@@ -845,8 +1144,8 @@ const styles = StyleSheet.create({
 
   greenGlow: {
     position: 'absolute',
-    width: 180,
-    height: 180,
+    width: width * 0.45,
+    height: width * 0.45,
     borderRadius: 999,
     backgroundColor:
       'rgba(134,239,172,0.12)',
@@ -932,8 +1231,12 @@ const styles = StyleSheet.create({
   },
 
   avatar: {
-    width: 54,
-    height: 54,
+    width: isSmallDevice
+      ? 48
+      : 54,
+    height: isSmallDevice
+      ? 48
+      : 54,
     borderRadius: 18,
     backgroundColor:
       COLORS.black,
@@ -947,12 +1250,14 @@ const styles = StyleSheet.create({
     fontFamily:
       'JosefinSans-Bold',
   },
-userRow: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  marginBottom: 28,
-},
+
+  userRow: {
+    flexDirection: 'row',
+    justifyContent:
+      'space-between',
+    alignItems: 'center',
+    marginBottom: 28,
+  },
 
   title: {
     fontSize: 18,
@@ -963,34 +1268,155 @@ userRow: {
 
   user: {
     marginTop: 6,
-    fontSize: 42,
-    lineHeight: 42,
+    fontSize: isSmallDevice
+      ? 34
+      : 42,
+    lineHeight: isSmallDevice
+      ? 38
+      : 42,
     letterSpacing: -2,
     color: COLORS.text,
     fontFamily:
       'JosefinSans-Bold',
   },
 
- statusBlock: {
-  alignItems: 'flex-end',
-  justifyContent: 'center',
-  paddingBottom: 4,
-},
+  statusBlock: {
+    alignItems: 'flex-end',
+  },
 
- statusLabel: {
-  fontSize: 10,
-  letterSpacing: 2,
-  color: COLORS.muted,
-  marginBottom: 6,
-  fontFamily: 'JosefinSans-Bold',
-},
+  statusLabel: {
+    fontSize: 10,
+    letterSpacing: 2,
+    color: COLORS.muted,
+    marginBottom: 6,
+    fontFamily:
+      'JosefinSans-Bold',
+  },
 
-statusValue: {
-  fontSize: 22,
-  lineHeight: 24,
-  color: COLORS.text,
-  fontFamily: 'JosefinSans-Bold',
-},
+  statusValue: {
+    fontSize: 22,
+    color: COLORS.text,
+    fontFamily:
+      'JosefinSans-Bold',
+  },
+
+  setupContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+
+  setupCard: {
+    overflow: 'hidden',
+    borderRadius: 36,
+    padding: 28,
+    backgroundColor:
+      COLORS.surface,
+    borderWidth: 1,
+    borderColor:
+      COLORS.border,
+  },
+
+  setupHeader: {
+    flexDirection: 'row',
+    justifyContent:
+      'space-between',
+    alignItems: 'center',
+    marginBottom: 28,
+  },
+
+  setupIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 24,
+    overflow: 'hidden',
+  },
+
+  setupIconGradient: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  setupTitle: {
+    fontSize: isSmallDevice
+      ? 34
+      : 42,
+    lineHeight: isSmallDevice
+      ? 38
+      : 46,
+    letterSpacing: -2,
+    color: COLORS.text,
+    fontFamily:
+      'JosefinSans-Bold',
+  },
+
+  setupText: {
+    marginTop: 18,
+    fontSize: 16,
+    lineHeight: 28,
+    color: COLORS.muted,
+    fontFamily:
+      'JosefinSans-Regular',
+  },
+
+  inputShell: {
+    marginTop: 32,
+    height: 68,
+    borderRadius: 22,
+    backgroundColor:
+      'rgba(255,255,255,0.72)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 22,
+  },
+
+  currencyPrefix: {
+    fontSize: 28,
+    color: COLORS.text,
+    marginRight: 12,
+    fontFamily:
+      'JosefinSans-Bold',
+  },
+
+  balanceInput: {
+    flex: 1,
+    fontSize: 26,
+    color: COLORS.text,
+    fontFamily:
+      'JosefinSans-Bold',
+  },
+
+  saveButton: {
+    marginTop: 28,
+    overflow: 'hidden',
+    borderRadius: 22,
+  },
+
+  saveButtonGradient: {
+    height: 64,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  saveButtonText: {
+    fontSize: 16,
+    color: COLORS.black,
+    letterSpacing: 1,
+    fontFamily:
+      'JosefinSans-Bold',
+  },
+
+  setupFooter: {
+    marginTop: 24,
+    fontSize: 13,
+    lineHeight: 22,
+    textAlign: 'center',
+    color: COLORS.muted,
+    fontFamily:
+      'JosefinSans-Regular',
+  },
 
   commandCard: {
     overflow: 'hidden',
@@ -1024,8 +1450,12 @@ statusValue: {
 
   commandValue: {
     marginTop: 18,
-    fontSize: 50,
-    lineHeight: 56,
+    fontSize: isSmallDevice
+      ? 38
+      : 50,
+    lineHeight: isSmallDevice
+      ? 42
+      : 56,
     letterSpacing: -4,
     color: COLORS.text,
     fontFamily:
@@ -1041,16 +1471,20 @@ statusValue: {
   },
 
   ringWrap: {
-    width: 130,
-    height: 130,
+    width: isSmallDevice
+      ? 100
+      : 130,
+    height: isSmallDevice
+      ? 100
+      : 130,
     justifyContent: 'center',
     alignItems: 'center',
   },
 
   outerRing: {
     position: 'absolute',
-    width: 130,
-    height: 130,
+    width: '100%',
+    height: '100%',
     borderRadius: 999,
     borderWidth: 1.5,
     borderColor:
@@ -1059,8 +1493,8 @@ statusValue: {
 
   middleRing: {
     position: 'absolute',
-    width: 90,
-    height: 90,
+    width: '68%',
+    height: '68%',
     borderRadius: 999,
     borderWidth: 1,
     borderColor:
@@ -1099,8 +1533,8 @@ statusValue: {
   },
 
   footerLabel: {
-    fontSize: 12,
-    letterSpacing: 1.5,
+    fontSize: 11,
+    letterSpacing: 1.2,
     color: COLORS.muted,
     marginBottom: 8,
     fontFamily:
@@ -1108,7 +1542,9 @@ statusValue: {
   },
 
   footerValue: {
-    fontSize: 18,
+    fontSize: isSmallDevice
+      ? 16
+      : 18,
     color: COLORS.text,
     fontFamily:
       'JosefinSans-Bold',
@@ -1123,7 +1559,10 @@ statusValue: {
   },
 
   telemetryCard: {
-    width: (width - 56) / 2,
+    width:
+      width < 420
+        ? '100%'
+        : (width - 56) / 2,
     minHeight: 180,
     borderRadius: 32,
     padding: 20,
@@ -1207,15 +1646,18 @@ statusValue: {
     marginTop: 6,
   },
 
-coreTop: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  marginBottom: 20,
-},
+  coreTop: {
+    flexDirection: 'row',
+    justifyContent:
+      'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
 
   coreTitle: {
-    fontSize: 30,
+    fontSize: isSmallDevice
+      ? 24
+      : 30,
     letterSpacing: -2,
     color: COLORS.text,
     fontFamily:
@@ -1230,15 +1672,15 @@ coreTop: {
       'JosefinSans-Regular',
   },
 
-coreBadge: {
-  height: 38,
-  paddingHorizontal: 18,
-  borderRadius: 999,
-  backgroundColor: COLORS.black,
-  justifyContent: 'center',
-  alignItems: 'center',
-  marginTop: -18,
-},
+  coreBadge: {
+    height: 38,
+    paddingHorizontal: 18,
+    borderRadius: 999,
+    backgroundColor:
+      COLORS.black,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 
   coreBadgeText: {
     color: '#fff',
@@ -1249,7 +1691,8 @@ coreBadge: {
   },
 
   coreCard: {
-    height: 500,
+    minHeight:
+      height * 0.62,
     borderRadius: 42,
     overflow: 'hidden',
     backgroundColor:
@@ -1267,7 +1710,7 @@ coreBadge: {
   },
 
   hudBox: {
-    width: 140,
+    width: width * 0.32,
     padding: 16,
     borderRadius: 24,
     backgroundColor:
