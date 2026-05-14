@@ -31,6 +31,8 @@ import {
   SafeAreaView,
 } from 'react-native-safe-area-context';
 
+import { useIsFocused } from '@react-navigation/native';
+
 import NeuralCore from '../../components/three/NeuralCore';
 
 import {
@@ -76,6 +78,8 @@ function fmtMoney(n) {
 }
 
 export default function DashboardScreen() {
+  const isFocused = useIsFocused();
+
   const [loading, setLoading] =
     useState(true);
 
@@ -681,21 +685,23 @@ export default function DashboardScreen() {
           </View>
 
           <View style={styles.coreCard}>
-            <NeuralCore
-              mode={activeWidget}
-              budgetProgress={
-                metrics.budgetProgress
-              }
-              scholarshipUrgency={
-                metrics.scholarshipUrgency
-              }
-              academicRisk={
-                metrics.academicRisk
-              }
-              engagement={
-                metrics.engagementIntensity
-              }
-            />
+            {isFocused && (
+              <NeuralCore
+                mode={activeWidget}
+                budgetProgress={
+                  metrics.budgetProgress
+                }
+                scholarshipUrgency={
+                  metrics.scholarshipUrgency
+                }
+                academicRisk={
+                  metrics.academicRisk
+                }
+                engagement={
+                  metrics.engagementIntensity
+                }
+              />
+            )}
 
             <View
               style={styles.hudTop}
@@ -947,12 +953,13 @@ const styles = StyleSheet.create({
     fontFamily:
       'JosefinSans-Bold',
   },
-userRow: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  marginBottom: 28,
-},
+
+  userRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 28,
+  },
 
   title: {
     fontSize: 18,
@@ -971,26 +978,26 @@ userRow: {
       'JosefinSans-Bold',
   },
 
- statusBlock: {
-  alignItems: 'flex-end',
-  justifyContent: 'center',
-  paddingBottom: 4,
-},
+  statusBlock: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    paddingBottom: 4,
+  },
 
- statusLabel: {
-  fontSize: 10,
-  letterSpacing: 2,
-  color: COLORS.muted,
-  marginBottom: 6,
-  fontFamily: 'JosefinSans-Bold',
-},
+  statusLabel: {
+    fontSize: 10,
+    letterSpacing: 2,
+    color: COLORS.muted,
+    marginBottom: 6,
+    fontFamily: 'JosefinSans-Bold',
+  },
 
-statusValue: {
-  fontSize: 22,
-  lineHeight: 24,
-  color: COLORS.text,
-  fontFamily: 'JosefinSans-Bold',
-},
+  statusValue: {
+    fontSize: 22,
+    lineHeight: 24,
+    color: COLORS.text,
+    fontFamily: 'JosefinSans-Bold',
+  },
 
   commandCard: {
     overflow: 'hidden',
@@ -1207,12 +1214,12 @@ statusValue: {
     marginTop: 6,
   },
 
-coreTop: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  marginBottom: 20,
-},
+  coreTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
 
   coreTitle: {
     fontSize: 30,
@@ -1230,15 +1237,15 @@ coreTop: {
       'JosefinSans-Regular',
   },
 
-coreBadge: {
-  height: 38,
-  paddingHorizontal: 18,
-  borderRadius: 999,
-  backgroundColor: COLORS.black,
-  justifyContent: 'center',
-  alignItems: 'center',
-  marginTop: -18,
-},
+  coreBadge: {
+    height: 38,
+    paddingHorizontal: 18,
+    borderRadius: 999,
+    backgroundColor: COLORS.black,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: -18,
+  },
 
   coreBadgeText: {
     color: '#fff',
