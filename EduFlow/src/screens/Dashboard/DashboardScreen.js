@@ -34,6 +34,12 @@ import {
   Ionicons,
 } from '@expo/vector-icons';
 
+import {
+  SafeAreaView,
+} from 'react-native-safe-area-context';
+
+import { useIsFocused } from '@react-navigation/native';
+
 import NeuralCore from '../../components/three/NeuralCore';
 import ScreenWrapper from '../../components/layout/ScreenWrapper';
 
@@ -87,6 +93,8 @@ function fmtMoney(n) {
 }
 
 export default function DashboardScreen() {
+  const isFocused = useIsFocused();
+
   const [loading, setLoading] =
     useState(true);
 
@@ -992,24 +1000,24 @@ export default function DashboardScreen() {
             </View>
           </View>
 
-          <View
-            style={styles.coreCard}
-          >
-            <NeuralCore
-              mode={activeWidget}
-              budgetProgress={
-                metrics.budgetProgress
-              }
-              scholarshipUrgency={
-                metrics.scholarshipUrgency
-              }
-              academicRisk={
-                metrics.academicRisk
-              }
-              engagement={
-                metrics.engagementIntensity
-              }
-            />
+          <View style={styles.coreCard}>
+            {isFocused && (
+              <NeuralCore
+                mode={activeWidget}
+                budgetProgress={
+                  metrics.budgetProgress
+                }
+                scholarshipUrgency={
+                  metrics.scholarshipUrgency
+                }
+                academicRisk={
+                  metrics.academicRisk
+                }
+                engagement={
+                  metrics.engagementIntensity
+                }
+              />
+            )}
 
             <View
               style={styles.hudTop}
@@ -1253,8 +1261,7 @@ const styles = StyleSheet.create({
 
   userRow: {
     flexDirection: 'row',
-    justifyContent:
-      'space-between',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 28,
   },
@@ -1282,6 +1289,8 @@ const styles = StyleSheet.create({
 
   statusBlock: {
     alignItems: 'flex-end',
+    justifyContent: 'center',
+    paddingBottom: 4,
   },
 
   statusLabel: {
@@ -1289,133 +1298,14 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     color: COLORS.muted,
     marginBottom: 6,
-    fontFamily:
-      'JosefinSans-Bold',
+    fontFamily: 'JosefinSans-Bold',
   },
 
   statusValue: {
     fontSize: 22,
+    lineHeight: 24,
     color: COLORS.text,
-    fontFamily:
-      'JosefinSans-Bold',
-  },
-
-  setupContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-
-  setupCard: {
-    overflow: 'hidden',
-    borderRadius: 36,
-    padding: 28,
-    backgroundColor:
-      COLORS.surface,
-    borderWidth: 1,
-    borderColor:
-      COLORS.border,
-  },
-
-  setupHeader: {
-    flexDirection: 'row',
-    justifyContent:
-      'space-between',
-    alignItems: 'center',
-    marginBottom: 28,
-  },
-
-  setupIconWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: 24,
-    overflow: 'hidden',
-  },
-
-  setupIconGradient: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  setupTitle: {
-    fontSize: isSmallDevice
-      ? 34
-      : 42,
-    lineHeight: isSmallDevice
-      ? 38
-      : 46,
-    letterSpacing: -2,
-    color: COLORS.text,
-    fontFamily:
-      'JosefinSans-Bold',
-  },
-
-  setupText: {
-    marginTop: 18,
-    fontSize: 16,
-    lineHeight: 28,
-    color: COLORS.muted,
-    fontFamily:
-      'JosefinSans-Regular',
-  },
-
-  inputShell: {
-    marginTop: 32,
-    height: 68,
-    borderRadius: 22,
-    backgroundColor:
-      'rgba(255,255,255,0.72)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 22,
-  },
-
-  currencyPrefix: {
-    fontSize: 28,
-    color: COLORS.text,
-    marginRight: 12,
-    fontFamily:
-      'JosefinSans-Bold',
-  },
-
-  balanceInput: {
-    flex: 1,
-    fontSize: 26,
-    color: COLORS.text,
-    fontFamily:
-      'JosefinSans-Bold',
-  },
-
-  saveButton: {
-    marginTop: 28,
-    overflow: 'hidden',
-    borderRadius: 22,
-  },
-
-  saveButtonGradient: {
-    height: 64,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  saveButtonText: {
-    fontSize: 16,
-    color: COLORS.black,
-    letterSpacing: 1,
-    fontFamily:
-      'JosefinSans-Bold',
-  },
-
-  setupFooter: {
-    marginTop: 24,
-    fontSize: 13,
-    lineHeight: 22,
-    textAlign: 'center',
-    color: COLORS.muted,
-    fontFamily:
-      'JosefinSans-Regular',
+    fontFamily: 'JosefinSans-Bold',
   },
 
   commandCard: {
@@ -1648,8 +1538,7 @@ const styles = StyleSheet.create({
 
   coreTop: {
     flexDirection: 'row',
-    justifyContent:
-      'space-between',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
   },
@@ -1676,10 +1565,10 @@ const styles = StyleSheet.create({
     height: 38,
     paddingHorizontal: 18,
     borderRadius: 999,
-    backgroundColor:
-      COLORS.black,
+    backgroundColor: COLORS.black,
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: -18,
   },
 
   coreBadgeText: {
