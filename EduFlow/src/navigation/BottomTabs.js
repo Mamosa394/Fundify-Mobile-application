@@ -220,7 +220,7 @@ export default function BottomTabs() {
       <Tab.Screen
         name="Planner"
         component={
-          AnalyticsScreen
+          
         }
       />
 
