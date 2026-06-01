@@ -19,7 +19,7 @@ import { auth, db } from './firebase';
 |--------------------------------------------------------------------------
 */
 
-function getCurrentUser() {
+export function getCurrentUser() {
   return new Promise((resolve) => {
     const unsubscribe =
       onAuthStateChanged(

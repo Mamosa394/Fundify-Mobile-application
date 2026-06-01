@@ -5,14 +5,9 @@ import {
   getDoc,
   setDoc,
   updateDoc,
-  collection,
-  query,
-  where,
-  getDocs,
   serverTimestamp,
   arrayUnion,
   arrayRemove,
-  Timestamp
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { getCurrentUser } from './DashboardService';
@@ -28,7 +23,7 @@ const GRADE_POINTS = {
   'B+': 3.3, 'B': 3.0, 'B-': 2.7,
   'C+': 2.3, 'C': 2.0, 'C-': 1.7,
   'D+': 1.3, 'D': 1.0, 'D-': 0.7,
-  'F': 0.0
+  'F': 0.0,
 };
 
 function calculateGPAPoints(grade) {
@@ -43,21 +38,20 @@ function calculateWeightedGPA(modules) {
   let totalQualityPoints = 0;
   let totalCredits = 0;
 
-  modules.forEach(module => {
+  modules.forEach((module) => {
     const credits = module.credits || 0;
     const grade = module.currentGrade || 'F';
     const gradePoints = calculateGPAPoints(grade);
-    
     totalQualityPoints += credits * gradePoints;
     totalCredits += credits;
   });
 
   const gpa = totalCredits > 0 ? (totalQualityPoints / totalCredits).toFixed(2) : 0;
-  
+
   return {
     gpa: parseFloat(gpa),
     totalCredits,
-    totalPoints: totalQualityPoints
+    totalPoints: totalQualityPoints,
   };
 }
 
@@ -65,21 +59,20 @@ function predictGPA(modules, targetGrades) {
   let totalQualityPoints = 0;
   let totalCredits = 0;
 
-  modules.forEach(module => {
+  modules.forEach((module) => {
     const credits = module.credits || 0;
     const grade = targetGrades[module.id] || module.currentGrade || 'F';
     const gradePoints = calculateGPAPoints(grade);
-    
     totalQualityPoints += credits * gradePoints;
     totalCredits += credits;
   });
 
   const predictedGPA = totalCredits > 0 ? (totalQualityPoints / totalCredits).toFixed(2) : 0;
-  
+
   return {
     predictedGPA: parseFloat(predictedGPA),
     totalCredits,
-    totalPoints: totalQualityPoints
+    totalPoints: totalQualityPoints,
   };
 }
 
@@ -96,30 +89,31 @@ export async function addModule(moduleData) {
 
     const uid = user.uid;
     const academicRef = doc(db, 'academics', uid);
-    
+
+    // ✅ Use ISO string instead of serverTimestamp() inside array objects
     const module = {
-      id: `mod_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id: `mod_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
       ...moduleData,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       assignments: [],
       assessments: [],
       currentGrade: moduleData.currentGrade || 'F',
-      targetGrade: moduleData.targetGrade || 'A'
+      targetGrade: moduleData.targetGrade || 'A',
     };
 
     const docSnap = await getDoc(academicRef);
-    
+
     if (docSnap.exists()) {
       await updateDoc(academicRef, {
         modules: arrayUnion(module),
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
       });
     } else {
       await setDoc(academicRef, {
         modules: [module],
         createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
       });
     }
 
@@ -137,25 +131,26 @@ export async function updateModule(moduleId, updates) {
 
     const uid = user.uid;
     const academicRef = doc(db, 'academics', uid);
-    
+
     const docSnap = await getDoc(academicRef);
     if (!docSnap.exists()) throw new Error('No academic data found');
 
     const data = docSnap.data();
     const modules = data.modules || [];
-    const moduleIndex = modules.findIndex(m => m.id === moduleId);
-    
+    const moduleIndex = modules.findIndex((m) => m.id === moduleId);
+
     if (moduleIndex === -1) throw new Error('Module not found');
 
+    // ✅ Use ISO string inside array
     modules[moduleIndex] = {
       ...modules[moduleIndex],
       ...updates,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     };
 
     await updateDoc(academicRef, {
       modules: modules,
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
     });
 
     return modules[moduleIndex];
@@ -172,18 +167,18 @@ export async function deleteModule(moduleId) {
 
     const uid = user.uid;
     const academicRef = doc(db, 'academics', uid);
-    
+
     const docSnap = await getDoc(academicRef);
     if (!docSnap.exists()) throw new Error('No academic data found');
 
     const data = docSnap.data();
-    const module = data.modules.find(m => m.id === moduleId);
-    
+    const module = data.modules.find((m) => m.id === moduleId);
+
     if (!module) throw new Error('Module not found');
 
     await updateDoc(academicRef, {
       modules: arrayRemove(module),
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
     });
 
     return true;
@@ -200,9 +195,9 @@ export async function getModules() {
 
     const uid = user.uid;
     const academicRef = doc(db, 'academics', uid);
-    
+
     const docSnap = await getDoc(academicRef);
-    
+
     if (!docSnap.exists()) {
       return { modules: [], gpa: 0, totalCredits: 0 };
     }
@@ -215,7 +210,7 @@ export async function getModules() {
       modules,
       gpa: gpaData.gpa,
       totalCredits: gpaData.totalCredits,
-      totalPoints: gpaData.totalPoints
+      totalPoints: gpaData.totalPoints,
     };
   } catch (error) {
     console.error('[AcademicService] getModules error:', error);
@@ -236,22 +231,23 @@ export async function addAssignment(moduleId, assignmentData) {
 
     const uid = user.uid;
     const academicRef = doc(db, 'academics', uid);
-    
+
     const docSnap = await getDoc(academicRef);
     if (!docSnap.exists()) throw new Error('No academic data found');
 
     const data = docSnap.data();
     const modules = data.modules || [];
-    const moduleIndex = modules.findIndex(m => m.id === moduleId);
-    
+    const moduleIndex = modules.findIndex((m) => m.id === moduleId);
+
     if (moduleIndex === -1) throw new Error('Module not found');
 
+    // ✅ Use ISO string inside array
     const assignment = {
-      id: `asgn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id: `asgn_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
       ...assignmentData,
       status: assignmentData.status || 'pending',
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     };
 
     modules[moduleIndex].assignments = modules[moduleIndex].assignments || [];
@@ -259,7 +255,7 @@ export async function addAssignment(moduleId, assignmentData) {
 
     await updateDoc(academicRef, {
       modules: modules,
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
     });
 
     return assignment;
@@ -276,28 +272,29 @@ export async function updateAssignment(moduleId, assignmentId, updates) {
 
     const uid = user.uid;
     const academicRef = doc(db, 'academics', uid);
-    
+
     const docSnap = await getDoc(academicRef);
     if (!docSnap.exists()) throw new Error('No academic data found');
 
     const data = docSnap.data();
     const modules = data.modules || [];
-    const moduleIndex = modules.findIndex(m => m.id === moduleId);
-    
+    const moduleIndex = modules.findIndex((m) => m.id === moduleId);
+
     if (moduleIndex === -1) throw new Error('Module not found');
 
-    const assignmentIndex = modules[moduleIndex].assignments.findIndex(a => a.id === assignmentId);
+    const assignmentIndex = modules[moduleIndex].assignments.findIndex((a) => a.id === assignmentId);
     if (assignmentIndex === -1) throw new Error('Assignment not found');
 
+    // ✅ Use ISO string inside array
     modules[moduleIndex].assignments[assignmentIndex] = {
       ...modules[moduleIndex].assignments[assignmentIndex],
       ...updates,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     };
 
     await updateDoc(academicRef, {
       modules: modules,
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
     });
 
     return modules[moduleIndex].assignments[assignmentIndex];
@@ -314,23 +311,23 @@ export async function deleteAssignment(moduleId, assignmentId) {
 
     const uid = user.uid;
     const academicRef = doc(db, 'academics', uid);
-    
+
     const docSnap = await getDoc(academicRef);
     if (!docSnap.exists()) throw new Error('No academic data found');
 
     const data = docSnap.data();
     const modules = data.modules || [];
-    const moduleIndex = modules.findIndex(m => m.id === moduleId);
-    
+    const moduleIndex = modules.findIndex((m) => m.id === moduleId);
+
     if (moduleIndex === -1) throw new Error('Module not found');
 
     modules[moduleIndex].assignments = modules[moduleIndex].assignments.filter(
-      a => a.id !== assignmentId
+      (a) => a.id !== assignmentId
     );
 
     await updateDoc(academicRef, {
       modules: modules,
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
     });
 
     return true;
@@ -353,21 +350,22 @@ export async function addAssessment(moduleId, assessmentData) {
 
     const uid = user.uid;
     const academicRef = doc(db, 'academics', uid);
-    
+
     const docSnap = await getDoc(academicRef);
     if (!docSnap.exists()) throw new Error('No academic data found');
 
     const data = docSnap.data();
     const modules = data.modules || [];
-    const moduleIndex = modules.findIndex(m => m.id === moduleId);
-    
+    const moduleIndex = modules.findIndex((m) => m.id === moduleId);
+
     if (moduleIndex === -1) throw new Error('Module not found');
 
+    // ✅ Use ISO string inside array
     const assessment = {
-      id: `asmt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id: `asmt_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
       ...assessmentData,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     };
 
     modules[moduleIndex].assessments = modules[moduleIndex].assessments || [];
@@ -375,7 +373,7 @@ export async function addAssessment(moduleId, assessmentData) {
 
     await updateDoc(academicRef, {
       modules: modules,
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
     });
 
     return assessment;
@@ -392,28 +390,29 @@ export async function updateAssessment(moduleId, assessmentId, updates) {
 
     const uid = user.uid;
     const academicRef = doc(db, 'academics', uid);
-    
+
     const docSnap = await getDoc(academicRef);
     if (!docSnap.exists()) throw new Error('No academic data found');
 
     const data = docSnap.data();
     const modules = data.modules || [];
-    const moduleIndex = modules.findIndex(m => m.id === moduleId);
-    
+    const moduleIndex = modules.findIndex((m) => m.id === moduleId);
+
     if (moduleIndex === -1) throw new Error('Module not found');
 
-    const assessmentIndex = modules[moduleIndex].assessments.findIndex(a => a.id === assessmentId);
+    const assessmentIndex = modules[moduleIndex].assessments.findIndex((a) => a.id === assessmentId);
     if (assessmentIndex === -1) throw new Error('Assessment not found');
 
+    // ✅ Use ISO string inside array
     modules[moduleIndex].assessments[assessmentIndex] = {
       ...modules[moduleIndex].assessments[assessmentIndex],
       ...updates,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     };
 
     await updateDoc(academicRef, {
       modules: modules,
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
     });
 
     return modules[moduleIndex].assessments[assessmentIndex];
@@ -435,27 +434,24 @@ export async function getGPAAnalytics() {
     const modules = data.modules || [];
 
     const currentGPA = data.gpa;
-    const semesterGPA = currentGPA; // Could be filtered by semester
-    const targetGPA = 3.5; // Configurable target
+    const semesterGPA = currentGPA;
+    const targetGPA = 3.5;
 
-    // Calculate grade distribution
     const gradeDistribution = {};
-    modules.forEach(module => {
+    modules.forEach((module) => {
       const grade = module.currentGrade || 'F';
       gradeDistribution[grade] = (gradeDistribution[grade] || 0) + 1;
     });
 
-    // Calculate required grades for target GPA
     const requiredGrades = {};
     if (currentGPA < targetGPA) {
-      modules.forEach(module => {
+      modules.forEach((module) => {
         const currentPoints = calculateGPAPoints(module.currentGrade);
         const requiredPoints = (targetGPA * data.totalCredits - data.totalPoints + currentPoints * module.credits) / module.credits;
-        
-        // Find nearest grade
+
         let nearestGrade = 'A+';
         let minDiff = Infinity;
-        
+
         Object.entries(GRADE_POINTS).forEach(([grade, points]) => {
           const diff = Math.abs(points - requiredPoints);
           if (diff < minDiff && points >= requiredPoints) {
@@ -463,31 +459,30 @@ export async function getGPAAnalytics() {
             nearestGrade = grade;
           }
         });
-        
+
         requiredGrades[module.id] = nearestGrade;
       });
     }
 
-    // Calculate workload distribution
-    const workload = modules.map(m => ({
+    const workload = modules.map((m) => ({
       name: m.moduleName || m.name,
       credits: m.credits,
       assignments: (m.assignments || []).length,
       assessments: (m.assessments || []).length,
-      color: m.color || '#7DD3FC'
+      color: m.color || '#7DD3FC',
     }));
 
     return {
       currentGPA,
       semesterGPA,
       targetGPA,
-      predictedGPA: currentGPA, // Can be enhanced with prediction logic
+      predictedGPA: currentGPA,
       gradeDistribution,
       requiredGrades,
       workload,
       totalCredits: data.totalCredits,
       totalModules: modules.length,
-      atRiskModules: modules.filter(m => calculateGPAPoints(m.currentGrade) < 2.0)
+      atRiskModules: modules.filter((m) => calculateGPAPoints(m.currentGrade) < 2.0),
     };
   } catch (error) {
     console.error('[AcademicService] getGPAAnalytics error:', error);
@@ -499,19 +494,19 @@ export async function simulateGPAScenario(gradeChanges) {
   try {
     const data = await getModules();
     const modules = data.modules || [];
-    
-    const simulatedModules = modules.map(module => ({
+
+    const simulatedModules = modules.map((module) => ({
       ...module,
-      simulatedGrade: gradeChanges[module.id] || module.currentGrade
+      simulatedGrade: gradeChanges[module.id] || module.currentGrade,
     }));
 
     const prediction = predictGPA(modules, gradeChanges);
-    
+
     return {
       currentGPA: data.gpa,
       simulatedGPA: prediction.predictedGPA,
       difference: (prediction.predictedGPA - data.gpa).toFixed(2),
-      isImprovement: prediction.predictedGPA > data.gpa
+      isImprovement: prediction.predictedGPA > data.gpa,
     };
   } catch (error) {
     console.error('[AcademicService] simulateGPAScenario error:', error);
@@ -534,9 +529,8 @@ export async function getAcademicInsights() {
     const now = new Date();
     const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-    modules.forEach(module => {
-      // Check assignments
-      (module.assignments || []).forEach(assignment => {
+    modules.forEach((module) => {
+      (module.assignments || []).forEach((assignment) => {
         const dueDate = new Date(assignment.dueDate);
         if (dueDate <= weekFromNow && assignment.status !== 'completed') {
           upcomingDeadlines.push({
@@ -544,13 +538,12 @@ export async function getAcademicInsights() {
             moduleName: module.moduleName || module.name,
             moduleCode: module.moduleCode,
             color: module.color,
-            type: 'assignment'
+            type: 'assignment',
           });
         }
       });
 
-      // Check assessments
-      (module.assessments || []).forEach(assessment => {
+      (module.assessments || []).forEach((assessment) => {
         const examDate = new Date(assessment.date || assessment.examDate);
         if (examDate <= weekFromNow) {
           upcomingDeadlines.push({
@@ -559,23 +552,21 @@ export async function getAcademicInsights() {
             moduleCode: module.moduleCode,
             color: module.color,
             type: 'assessment',
-            assessmentType: assessment.type
+            assessmentType: assessment.type,
           });
         }
       });
     });
 
-    // Sort by date
     upcomingDeadlines.sort((a, b) => {
       const dateA = new Date(a.dueDate || a.date || a.examDate);
       const dateB = new Date(b.dueDate || b.date || b.examDate);
       return dateA - dateB;
     });
 
-    // Calculate completion rates
     const totalAssignments = modules.reduce((sum, m) => sum + (m.assignments || []).length, 0);
-    const completedAssignments = modules.reduce((sum, m) => 
-      sum + (m.assignments || []).filter(a => a.status === 'completed').length, 0
+    const completedAssignments = modules.reduce(
+      (sum, m) => sum + (m.assignments || []).filter((a) => a.status === 'completed').length, 0
     );
 
     return {
@@ -583,8 +574,8 @@ export async function getAcademicInsights() {
       totalAssignments,
       completedAssignments,
       completionRate: totalAssignments > 0 ? (completedAssignments / totalAssignments * 100).toFixed(1) : 0,
-      atRiskCount: modules.filter(m => calculateGPAPoints(m.currentGrade) < 2.0).length,
-      highPerformers: modules.filter(m => calculateGPAPoints(m.currentGrade) >= 3.5).length
+      atRiskCount: modules.filter((m) => calculateGPAPoints(m.currentGrade) < 2.0).length,
+      highPerformers: modules.filter((m) => calculateGPAPoints(m.currentGrade) >= 3.5).length,
     };
   } catch (error) {
     console.error('[AcademicService] getAcademicInsights error:', error);
@@ -596,5 +587,5 @@ export {
   calculateWeightedGPA,
   predictGPA,
   GRADE_POINTS,
-  calculateGPAPoints
+  calculateGPAPoints,
 };
