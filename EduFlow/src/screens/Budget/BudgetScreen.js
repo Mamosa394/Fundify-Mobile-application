@@ -1,15 +1,11 @@
-// src/screens/Budget/BudgetScreen.js
-
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   Pressable,
   Dimensions,
-  StatusBar,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
@@ -22,58 +18,59 @@ import Svg, {
 } from 'react-native-svg';
 
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
-import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
+import { Ionicons }       from '@expo/vector-icons';
+import * as Haptics       from 'expo-haptics';
+import { SafeAreaView }   from 'react-native-safe-area-context';
+import { StatusBar }      from 'expo-status-bar';
 
+// ✅ Fixed import paths
 import {
   getCurrentBudget,
   getExpenses,
-  addExpense,
   BUDGET_CATEGORIES,
-} from '../../../src/services/budgetService';
+} from '../../services/budgetService';
 
-import { auth } from '../../../src/services/firebase';
+import { auth } from '../../services/firebase';
 
 const { width } = Dimensions.get('window');
 
 const COLORS = {
   background: '#F2F2F7',
-  surface: '#FFFFFF',
-  text: '#0A0A0A',
-  muted: '#8E8E93',
-  positive: '#34C759',
-  negative: '#FF3B30',
-  accent: '#1C1C1E',
-  border: 'rgba(0,0,0,0.06)',
+  surface:    '#FFFFFF',
+  text:       '#0A0A0A',
+  muted:      '#8E8E93',
+  positive:   '#34C759',
+  negative:   '#FF3B30',
+  accent:     '#1C1C1E',
+  border:     'rgba(0,0,0,0.06)',
   cardShadow: 'rgba(0,0,0,0.04)',
 };
 
-const formatMoney = (amount) => {
-  return `R${Number(amount || 0).toLocaleString('en-ZA')}`;
-};
+const formatMoney = (amount) =>
+  `R${Number(amount || 0).toLocaleString('en-ZA')}`;
 
+// ─── BudgetRing ───────────────────────────────────────────────────────────────
 function BudgetRing({ spent = 0, total = 1 }) {
-  const size = 180;
-  const strokeWidth = 14;
-  const radius = (size - strokeWidth) / 2;
+  const size          = 180;
+  const strokeWidth   = 14;
+  const radius        = (size - strokeWidth) / 2;
   const circumference = radius * Math.PI * 2;
-  const progress = Math.min(spent / total, 1);
-  const dashOffset = circumference - circumference * progress;
-
-  const remaining = total - spent;
-  const percentageSpent = Math.round(progress * 100);
+  const progress      = Math.min(spent / total, 1);
+  const dashOffset    = circumference - circumference * progress;
+  const remaining     = total - spent;
+  const percentSpent  = Math.round(progress * 100);
 
   return (
     <View style={styles.ringContainer}>
       <Svg width={size} height={size}>
         <Defs>
           <SvgGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <Stop offset="0%" stopColor="#1C1C1E" />
+            <Stop offset="0%"   stopColor="#1C1C1E" />
             <Stop offset="100%" stopColor="#48484A" />
           </SvgGradient>
         </Defs>
 
+        {/* Track */}
         <Circle
           stroke={COLORS.border}
           fill="none"
@@ -83,6 +80,7 @@ function BudgetRing({ spent = 0, total = 1 }) {
           strokeWidth={strokeWidth}
         />
 
+        {/* Progress */}
         <Circle
           stroke="url(#ringGrad)"
           fill="none"
@@ -98,28 +96,19 @@ function BudgetRing({ spent = 0, total = 1 }) {
       </Svg>
 
       <View style={styles.ringContent}>
-        <Text style={styles.ringRemaining}>
-          {formatMoney(remaining)}
-        </Text>
-        <Text style={styles.ringLabel}>
-          Leftover
-        </Text>
-        <Text style={styles.ringPercentage}>
-          {percentageSpent}% spent
-        </Text>
+        <Text style={styles.ringRemaining}>{formatMoney(remaining)}</Text>
+        <Text style={styles.ringLabel}>Leftover</Text>
+        <Text style={styles.ringPercentage}>{percentSpent}% spent</Text>
       </View>
     </View>
   );
 }
 
+// ─── CategoryRow ──────────────────────────────────────────────────────────────
 function CategoryRow({ item, onPress }) {
-  const progress = Math.min(
-    item.budgeted > 0 ? item.spent / item.budgeted : 0,
-    1
-  );
-
+  const progress    = Math.min(item.budgeted > 0 ? item.spent / item.budgeted : 0, 1);
   const isOverBudget = progress >= 1;
-  const barColor = isOverBudget ? COLORS.negative : item.color;
+  const barColor    = isOverBudget ? COLORS.negative : item.color;
 
   return (
     <Pressable
@@ -134,75 +123,55 @@ function CategoryRow({ item, onPress }) {
           colors={[`${item.color}15`, `${item.color}08`]}
           style={styles.categoryIconGradient}
         >
-          <View
-            style={[styles.categoryDot, { backgroundColor: barColor }]}
-          />
+          <View style={[styles.categoryDot, { backgroundColor: barColor }]} />
         </LinearGradient>
       </View>
 
       <View style={styles.categoryInfo}>
         <Text style={styles.categoryName}>{item.name}</Text>
-        
         <View style={styles.progressContainer}>
           <View style={styles.progressTrack}>
             <View
               style={[
                 styles.progressFill,
-                {
-                  width: `${Math.min(progress * 100, 100)}%`,
-                  backgroundColor: barColor,
-                },
+                { width: `${Math.min(progress * 100, 100)}%`, backgroundColor: barColor },
               ]}
             />
           </View>
-          
-          <Text style={styles.progressText}>
-            {Math.round(progress * 100)}%
-          </Text>
+          <Text style={styles.progressText}>{Math.round(progress * 100)}%</Text>
         </View>
       </View>
 
       <View style={styles.categoryAmounts}>
-        <Text style={styles.spentAmount}>
-          {formatMoney(item.spent)}
-        </Text>
-        <Text style={styles.budgetedAmount}>
-          / {formatMoney(item.budgeted)}
-        </Text>
+        <Text style={styles.spentAmount}>{formatMoney(item.spent)}</Text>
+        <Text style={styles.budgetedAmount}>/ {formatMoney(item.budgeted)}</Text>
       </View>
     </Pressable>
   );
 }
 
+// ─── SummaryCard ──────────────────────────────────────────────────────────────
 function SummaryCard({ label, amount, percentage, isPositive, icon }) {
   return (
     <View style={styles.summaryCard}>
       <View style={styles.summaryIconWrap}>
         <Ionicons name={icon} size={20} color={COLORS.accent} />
       </View>
-      
       <Text style={styles.summaryLabel}>{label}</Text>
-      
-      <Text
-        style={[
-          styles.summaryAmount,
-          isPositive ? styles.positiveText : styles.negativeText,
-        ]}
-      >
+      <Text style={[styles.summaryAmount, isPositive ? styles.positiveText : styles.negativeText]}>
         {isPositive ? '+' : '-'}{formatMoney(amount)}
       </Text>
-      
-      <Text style={styles.summaryPercentage}>
-        {percentage}%
-      </Text>
+      <Text style={styles.summaryPercentage}>{percentage}%</Text>
     </View>
   );
 }
 
-export default function BudgetScreen() {
-  const [budget, setBudget] = useState(null);
-  const [expenses, setExpenses] = useState([]);
-  const [loading, setLoading] = useState(true);
+// ─── BudgetScreen ─────────────────────────────────────────────────────────────
+// ✅ Added navigation prop
+export default function BudgetScreen({ navigation }) {
+  const [budget,     setBudget]     = useState(null);
+  const [expenses,   setExpenses]   = useState([]);
+  const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const userId = auth.currentUser?.uid;
@@ -210,21 +179,21 @@ export default function BudgetScreen() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const budgetData = await getCurrentBudget(userId);
-      const expenseData = await getExpenses(userId);
+      const [budgetData, expenseData] = await Promise.all([
+        getCurrentBudget(userId),
+        getExpenses(userId),
+      ]);
       setBudget(budgetData);
       setExpenses(expenseData || []);
     } catch (error) {
-      console.log(error);
+      console.error('BudgetScreen loadData:', error);
     } finally {
       setLoading(false);
     }
   }, [userId]);
 
   useEffect(() => {
-    if (userId) {
-      loadData();
-    }
+    if (userId) loadData();
   }, [loadData, userId]);
 
   const onRefresh = async () => {
@@ -235,32 +204,19 @@ export default function BudgetScreen() {
 
   const categories = useMemo(() => {
     if (!budget?.categories) return [];
-    return BUDGET_CATEGORIES.map((category) => ({
-      ...category,
-      spent: budget.categories?.[category.id]?.spent || 0,
-      budgeted: budget.categories?.[category.id]?.budgeted || 1,
+    return BUDGET_CATEGORIES.map((cat) => ({
+      ...cat,
+      spent:    budget.categories?.[cat.id]?.spent    || 0,
+      budgeted: budget.categories?.[cat.id]?.budgeted || 1,
     }));
   }, [budget]);
 
-  const totalSpent = budget?.spentTotal || 0;
-  const totalBudget = budget?.totalBudget || 0;
-  const remaining = totalBudget - totalSpent;
-  const savingsRate = totalBudget > 0 ? ((remaining / totalBudget) * 100).toFixed(1) : 0;
-
-  const handleQuickExpense = async () => {
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      await addExpense(userId, {
-        category: 'food',
-        amount: 50,
-        note: 'Quick expense',
-        date: new Date().toISOString(),
-      });
-      await loadData();
-    } catch (error) {
-      console.log(error);
-    }
-  };
+  const totalSpent  = budget?.spentTotal   || 0;
+  const totalBudget = budget?.totalBudget  || 0;
+  const remaining   = totalBudget - totalSpent;
+  const savingsRate = totalBudget > 0
+    ? ((remaining / totalBudget) * 100).toFixed(1)
+    : 0;
 
   if (loading) {
     return (
@@ -272,7 +228,7 @@ export default function BudgetScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar style="dark" />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -285,15 +241,18 @@ export default function BudgetScreen() {
         }
         contentContainerStyle={styles.content}
       >
-        {/* Header */}
+        {/* ── Header ── */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.time}>9:41</Text>
             <Text style={styles.screenTitle}>Budget</Text>
           </View>
-          
+
+          {/* ✅ + button now opens AddExpenseModal */}
           <Pressable
-            onPress={handleQuickExpense}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              navigation.navigate('AddExpenseModal');
+            }}
             style={({ pressed }) => [
               styles.headerButton,
               pressed && styles.headerButtonPressed,
@@ -303,12 +262,12 @@ export default function BudgetScreen() {
           </Pressable>
         </View>
 
-        {/* Hero Card */}
+        {/* ── Hero Ring Card ── */}
         <View style={styles.heroCard}>
           <BudgetRing spent={totalSpent} total={totalBudget} />
         </View>
 
-        {/* Summary Row */}
+        {/* ── Summary Row ── */}
         <View style={styles.summaryRow}>
           <SummaryCard
             label="Income"
@@ -317,7 +276,6 @@ export default function BudgetScreen() {
             isPositive={true}
             icon="arrow-down-circle-outline"
           />
-          
           <SummaryCard
             label="Expenses"
             amount={totalSpent}
@@ -325,7 +283,6 @@ export default function BudgetScreen() {
             isPositive={false}
             icon="arrow-up-circle-outline"
           />
-          
           <SummaryCard
             label="Savings"
             amount={remaining}
@@ -335,29 +292,41 @@ export default function BudgetScreen() {
           />
         </View>
 
-        {/* Section Header */}
+        {/* ── Section Header ── */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Categories</Text>
-          <Pressable>
+          <Pressable onPress={() => navigation.navigate('AllCategories')}>
             <Text style={styles.viewAll}>View all</Text>
           </Pressable>
         </View>
 
-        {/* Categories List */}
+        {/* ── Categories List ── */}
         <View style={styles.categoriesList}>
           {categories.map((item) => (
             <CategoryRow
               key={item.id}
               item={item}
+              // ✅ Now navigates to ExpenseDetail
               onPress={() => {
                 Haptics.selectionAsync();
+                navigation.navigate('ExpenseDetail', {
+                  categoryId:   item.id,
+                  categoryName: item.name,
+                });
               }}
             />
           ))}
         </View>
 
-        {/* CTA Banner */}
-        <Pressable style={styles.ctaBanner}>
+        {/* ── CTA Banner → AI Advisor ── */}
+        {/* ✅ Fixed: added onPress navigation */}
+        <Pressable
+          style={styles.ctaBanner}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            navigation.navigate('AIAdvisor');
+          }}
+        >
           <LinearGradient
             colors={['#1C1C1E', '#2C2C2E']}
             start={{ x: 0, y: 0 }}
@@ -366,16 +335,14 @@ export default function BudgetScreen() {
           >
             <View style={styles.ctaContent}>
               <View style={styles.ctaIconWrap}>
-                <Ionicons name="gift-outline" size={24} color="#FFF" />
+                <Ionicons name="sparkles-outline" size={24} color="#FFF" />
               </View>
-              
               <View style={styles.ctaTextWrap}>
                 <Text style={styles.ctaTitle}>Smart Budget Insights</Text>
                 <Text style={styles.ctaSubtitle}>
                   AI-powered spending recommendations
                 </Text>
               </View>
-              
               <Ionicons name="chevron-forward" size={20} color="#8E8E93" />
             </View>
           </LinearGradient>
@@ -387,19 +354,18 @@ export default function BudgetScreen() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
   },
-
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: COLORS.background,
   },
-
   content: {
     paddingHorizontal: 20,
     paddingTop: 8,
@@ -412,22 +378,12 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     marginBottom: 24,
   },
-
-  time: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: COLORS.muted,
-    marginBottom: 4,
-    letterSpacing: -0.2,
-  },
-
   screenTitle: {
     fontSize: 34,
     fontWeight: '800',
     color: COLORS.text,
     letterSpacing: -1.5,
   },
-
   headerButton: {
     width: 48,
     height: 48,
@@ -441,7 +397,6 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 8,
   },
-
   headerButtonPressed: {
     opacity: 0.8,
     transform: [{ scale: 0.96 }],
@@ -460,24 +415,20 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 4,
   },
-
   ringContainer: {
     justifyContent: 'center',
     alignItems: 'center',
   },
-
   ringContent: {
     position: 'absolute',
     alignItems: 'center',
   },
-
   ringRemaining: {
     fontSize: 32,
     fontWeight: '800',
     color: COLORS.text,
     letterSpacing: -1,
   },
-
   ringLabel: {
     fontSize: 14,
     fontWeight: '600',
@@ -486,7 +437,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
-
   ringPercentage: {
     fontSize: 13,
     fontWeight: '500',
@@ -500,7 +450,6 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 28,
   },
-
   summaryCard: {
     flex: 1,
     backgroundColor: COLORS.surface,
@@ -513,7 +462,6 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
-
   summaryIconWrap: {
     width: 36,
     height: 36,
@@ -523,7 +471,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
-
   summaryLabel: {
     fontSize: 12,
     fontWeight: '600',
@@ -532,22 +479,14 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     marginBottom: 6,
   },
-
   summaryAmount: {
     fontSize: 17,
     fontWeight: '800',
     letterSpacing: -0.5,
     marginBottom: 4,
   },
-
-  positiveText: {
-    color: COLORS.positive,
-  },
-
-  negativeText: {
-    color: COLORS.negative,
-  },
-
+  positiveText: { color: COLORS.positive },
+  negativeText: { color: COLORS.negative },
   summaryPercentage: {
     fontSize: 12,
     fontWeight: '500',
@@ -561,14 +500,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
-
   sectionTitle: {
     fontSize: 22,
     fontWeight: '800',
     color: COLORS.text,
     letterSpacing: -0.5,
   },
-
   viewAll: {
     fontSize: 15,
     fontWeight: '600',
@@ -576,10 +513,7 @@ const styles = StyleSheet.create({
   },
 
   // Categories List
-  categoriesList: {
-    marginBottom: 24,
-  },
-
+  categoriesList: { marginBottom: 24 },
   categoryCard: {
     backgroundColor: COLORS.surface,
     borderRadius: 20,
@@ -593,16 +527,11 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 1,
   },
-
   categoryCardPressed: {
     opacity: 0.7,
     transform: [{ scale: 0.98 }],
   },
-
-  categoryIconContainer: {
-    marginRight: 14,
-  },
-
+  categoryIconContainer: { marginRight: 14 },
   categoryIconGradient: {
     width: 44,
     height: 44,
@@ -610,18 +539,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-
   categoryDot: {
     width: 12,
     height: 12,
     borderRadius: 6,
   },
-
   categoryInfo: {
     flex: 1,
     marginRight: 12,
   },
-
   categoryName: {
     fontSize: 17,
     fontWeight: '700',
@@ -629,13 +555,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     letterSpacing: -0.3,
   },
-
   progressContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-
   progressTrack: {
     flex: 1,
     height: 6,
@@ -643,30 +567,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#F2F2F7',
     overflow: 'hidden',
   },
-
   progressFill: {
     height: '100%',
     borderRadius: 99,
   },
-
   progressText: {
     fontSize: 12,
     fontWeight: '600',
     color: COLORS.muted,
     minWidth: 36,
   },
-
-  categoryAmounts: {
-    alignItems: 'flex-end',
-  },
-
+  categoryAmounts: { alignItems: 'flex-end' },
   spentAmount: {
     fontSize: 18,
     fontWeight: '800',
     color: COLORS.text,
     letterSpacing: -0.3,
   },
-
   budgetedAmount: {
     fontSize: 13,
     fontWeight: '500',
@@ -684,18 +601,13 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     elevation: 8,
   },
-
-  ctaGradient: {
-    borderRadius: 24,
-  },
-
+  ctaGradient: { borderRadius: 24 },
   ctaContent: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 20,
     gap: 16,
   },
-
   ctaIconWrap: {
     width: 48,
     height: 48,
@@ -704,11 +616,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-
-  ctaTextWrap: {
-    flex: 1,
-  },
-
+  ctaTextWrap: { flex: 1 },
   ctaTitle: {
     fontSize: 17,
     fontWeight: '700',
@@ -716,14 +624,10 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
     marginBottom: 4,
   },
-
   ctaSubtitle: {
     fontSize: 14,
     fontWeight: '500',
     color: '#8E8E93',
   },
-
-  bottomSpacing: {
-    height: 40,
-  },
+  bottomSpacing: { height: 40 },
 });
