@@ -1,4 +1,5 @@
-// src/services/BudgetService.js
+// src/services/budgetService.js
+
 import {
   collection,
   doc,
@@ -7,13 +8,13 @@ import {
   deleteDoc,
   getDocs,
   getDoc,
+  setDoc,
   query,
   where,
   orderBy,
   serverTimestamp,
-  writeBatch
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 
 // Budget Categories
 export const BUDGET_CATEGORIES = [
@@ -29,13 +30,96 @@ export const BUDGET_CATEGORIES = [
 ];
 
 /**
+ * Get user profile from Firestore
+ */
+export const getUserProfile = async (userId) => {
+  try {
+    const userRef = doc(db, 'users', userId);
+    const userDoc = await getDoc(userRef);
+    
+    if (userDoc.exists()) {
+      return { id: userDoc.id, ...userDoc.data() };
+    }
+    return null;
+  } catch (error) {
+    console.error('Error getting user profile:', error);
+    throw error;
+  }
+};
+
+/**
+ * Save user income information
+ */
+export const saveUserIncome = async (userId, incomeData) => {
+  try {
+    const userRef = doc(db, 'users', userId);
+    await setDoc(userRef, {
+      income: incomeData.income,
+      incomeType: incomeData.incomeType,
+      extraIncome: incomeData.extraIncome,
+      extraIncomeDescription: incomeData.extraIncomeDescription,
+      totalIncome: incomeData.totalIncome,
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+    
+    console.log('User income saved successfully');
+    return true;
+  } catch (error) {
+    console.error('Error saving user income:', error);
+    throw error;
+  }
+};
+
+/**
+ * Save budget from wizard
+ */
+export const saveBudgetFromWizard = async (userId, budgetData) => {
+  try {
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const budgetRef = doc(db, 'users', userId, 'budgets', currentMonth);
+    
+    // Create categories object from budget data
+    const categories = {};
+    BUDGET_CATEGORIES.forEach(cat => {
+      categories[cat.id] = {
+        name: cat.name,
+        spent: 0,
+        budgeted: budgetData.categories[cat.id] || 0,
+        color: cat.color,
+        icon: cat.icon
+      };
+    });
+    
+    const budgetDoc = {
+      month: currentMonth,
+      totalBudget: budgetData.totalBudget,
+      remainingBudget: budgetData.totalBudget,
+      spentTotal: 0,
+      categories: categories,
+      strategy: budgetData.strategy,
+      livingSituation: budgetData.livingSituation,
+      incomeType: budgetData.incomeType,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
+    
+    await setDoc(budgetRef, budgetDoc);
+    console.log('Budget saved successfully from wizard');
+    return { id: currentMonth, ...budgetDoc };
+  } catch (error) {
+    console.error('Error saving budget from wizard:', error);
+    throw error;
+  }
+};
+
+/**
  * Initialize user budget for the month
  */
 export const initializeUserBudget = async (userId, initialBalance, month = null) => {
   console.log('[BudgetService] Initializing budget for user:', userId);
   
   try {
-    const currentMonth = month || new Date().toISOString().slice(0, 7); // YYYY-MM
+    const currentMonth = month || new Date().toISOString().slice(0, 7);
     const budgetRef = doc(db, 'users', userId, 'budgets', currentMonth);
     
     // Create budget categories with zero amounts initially
@@ -397,6 +481,71 @@ export const getSpendingInsights = async (userId) => {
     return insights;
   } catch (error) {
     console.error('[BudgetService] Error getting spending insights:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get expenses by category
+ */
+export const getExpensesByCategory = async (userId, categoryId, month = null) => {
+  try {
+    const currentMonth = month || new Date().toISOString().slice(0, 7);
+    const expensesRef = collection(db, 'users', userId, 'expenses');
+    const q = query(
+      expensesRef,
+      where('month', '==', currentMonth),
+      where('category', '==', categoryId),
+      orderBy('date', 'desc')
+    );
+    
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (error) {
+    console.error('Error getting expenses by category:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get daily spending for current month
+ */
+export const getDailySpending = async (userId, month = null) => {
+  try {
+    const expenses = await getExpenses(userId, month);
+    const dailyMap = new Map();
+    
+    expenses.forEach(expense => {
+      const day = expense.date;
+      if (!dailyMap.has(day)) {
+        dailyMap.set(day, 0);
+      }
+      dailyMap.set(day, dailyMap.get(day) + expense.amount);
+    });
+    
+    return Array.from(dailyMap.entries()).map(([date, amount]) => ({ date, amount }));
+  } catch (error) {
+    console.error('Error getting daily spending:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update payday settings
+ */
+export const updatePaydaySettings = async (userId, paydayDay, remindersEnabled = true) => {
+  try {
+    const userRef = doc(db, 'users', userId);
+    await setDoc(userRef, {
+      paydayDay: paydayDay,
+      remindersEnabled: remindersEnabled,
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+    
+    console.log('Payday settings updated');
+    return true;
+  } catch (error) {
+    console.error('Error updating payday settings:', error);
     throw error;
   }
 };

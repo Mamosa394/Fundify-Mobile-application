@@ -1,6 +1,6 @@
-// navigation/BottomTabs.js
+// navigation/BottomTabs.js - Updated to use BudgetStack
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 import { View, StyleSheet, Pressable, Text, Platform } from 'react-native';
@@ -16,9 +16,10 @@ import {
   BookOpen,
   Target,
 } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 
 import DashboardScreen from '../screens/Dashboard/DashboardScreen';
-import BudgetScreen from '../screens/Budget/BudgetScreen';
+import BudgetStack from '../../src/navigation/BudgetStack'; // Import the BudgetStack navigator
 import ScholarshipScreen from '../screens/Scholarships/ScholarshipScreen';
 import ProfileScreen from '../screens/Profile/ProfileScreen';
 
@@ -44,6 +45,11 @@ const COLORS = {
   primary: '#3B82F6',
 };
 
+const FONTS = {
+  bold: 'JosefinSans-Bold',
+  semiBold: 'JosefinSans-SemiBold',
+};
+
 // Academic Planner Top Tab Navigator
 function PlannerTopTabs() {
   return (
@@ -67,6 +73,7 @@ function PlannerTopTabs() {
           fontWeight: '600',
           textTransform: 'none',
           marginLeft: 4,
+          fontFamily: FONTS.semiBold,
         },
         tabBarActiveTintColor: COLORS.text,
         tabBarInactiveTintColor: COLORS.muted,
@@ -137,6 +144,8 @@ function CustomTabBar({ state, descriptors, navigation }) {
             const isFocused = state.index === index;
 
             const onPress = () => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              
               const event = navigation.emit({
                 type: 'tabPress',
                 target: route.key,
@@ -150,28 +159,34 @@ function CustomTabBar({ state, descriptors, navigation }) {
 
             let Icon = LayoutGrid;
             let activeColor = COLORS.cyan;
+            let label = '';
 
             switch (route.name) {
+              case 'Home':
+                Icon = LayoutGrid;
+                activeColor = COLORS.cyan;
+                label = 'Home';
+                break;
               case 'Budget':
                 Icon = Wallet;
                 activeColor = COLORS.orange;
+                label = 'Budget';
                 break;
-
               case 'Scholarships':
                 Icon = GraduationCap;
                 activeColor = COLORS.violet;
+                label = 'Scholarships';
                 break;
-
               case 'Planner':
                 Icon = Compass;
                 activeColor = COLORS.green;
+                label = 'Planner';
                 break;
-
               case 'Profile':
                 Icon = User2;
                 activeColor = COLORS.pink;
+                label = 'Profile';
                 break;
-
               default:
                 Icon = LayoutGrid;
                 activeColor = COLORS.cyan;
@@ -208,6 +223,11 @@ function CustomTabBar({ state, descriptors, navigation }) {
                     strokeWidth={isFocused ? 2.7 : 2.2}
                   />
                 </View>
+                {isFocused && (
+                  <Text style={[styles.tabLabel, { color: activeColor }]}>
+                    {label}
+                  </Text>
+                )}
               </Pressable>
             );
           })}
@@ -226,30 +246,14 @@ export default function BottomTabs() {
         lazy: false,
       }}
     >
-      <Tab.Screen
-        name="Home"
-        component={DashboardScreen}
-      />
-
-      <Tab.Screen
-        name="Budget"
-        component={BudgetScreen}
-      />
-
-      <Tab.Screen
-        name="Scholarships"
-        component={ScholarshipScreen}
-      />
-
-      <Tab.Screen
-        name="Planner"
-        component={PlannerTopTabs}
-      />
-
-      <Tab.Screen
-        name="Profile"
-        component={ProfileScreen}
-      />
+      <Tab.Screen name="Home" component={DashboardScreen} />
+      
+      {/* ✅ Use BudgetStack - this contains all budget-related screens */}
+      <Tab.Screen name="Budget" component={BudgetStack} />
+      
+      <Tab.Screen name="Scholarships" component={ScholarshipScreen} />
+      <Tab.Screen name="Planner" component={PlannerTopTabs} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
 }
@@ -293,5 +297,11 @@ const styles = StyleSheet.create({
     height: 74,
     borderRadius: 999,
     opacity: 0.18,
+  },
+  tabLabel: {
+    fontSize: 10,
+    fontFamily: FONTS.semiBold,
+    marginTop: 2,
+    letterSpacing: -0.2,
   },
 });
