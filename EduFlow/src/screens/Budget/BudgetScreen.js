@@ -1,3 +1,5 @@
+// src/screens/Budget/BudgetScreen.js
+
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   View,
@@ -22,6 +24,7 @@ import { Ionicons }       from '@expo/vector-icons';
 import * as Haptics       from 'expo-haptics';
 import { SafeAreaView }   from 'react-native-safe-area-context';
 import { StatusBar }      from 'expo-status-bar';
+import { useNavigation, useIsFocused } from '@react-navigation/native'; // ✅ Added useIsFocused
 
 // ✅ Fixed import paths
 import {
@@ -167,8 +170,11 @@ function SummaryCard({ label, amount, percentage, isPositive, icon }) {
 }
 
 // ─── BudgetScreen ─────────────────────────────────────────────────────────────
-// ✅ Added navigation prop
-export default function BudgetScreen({ navigation }) {
+// ✅ Removed navigation prop from params - using useNavigation hook instead
+export default function BudgetScreen() {
+  const navigation = useNavigation(); // ✅ Get navigation from hook
+  const isFocused = useIsFocused();   // ✅ Track screen focus
+  
   const [budget,     setBudget]     = useState(null);
   const [expenses,   setExpenses]   = useState([]);
   const [loading,    setLoading]    = useState(true);
@@ -177,24 +183,37 @@ export default function BudgetScreen({ navigation }) {
   const userId = auth.currentUser?.uid;
 
   const loadData = useCallback(async () => {
+    if (!userId) {
+      console.log('No user logged in');
+      setLoading(false);
+      return;
+    }
+    
     try {
       setLoading(true);
+      console.log('Loading budget for user:', userId);
+      
       const [budgetData, expenseData] = await Promise.all([
         getCurrentBudget(userId),
         getExpenses(userId),
       ]);
+      
       setBudget(budgetData);
       setExpenses(expenseData || []);
+      console.log('Budget loaded successfully');
     } catch (error) {
-      console.error('BudgetScreen loadData:', error);
+      console.error('BudgetScreen loadData error:', error);
     } finally {
       setLoading(false);
     }
   }, [userId]);
 
+  // ✅ Load data when screen is focused or userId changes
   useEffect(() => {
-    if (userId) loadData();
-  }, [loadData, userId]);
+    if (userId && isFocused) {
+      loadData();
+    }
+  }, [loadData, userId, isFocused]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -319,7 +338,6 @@ export default function BudgetScreen({ navigation }) {
         </View>
 
         {/* ── CTA Banner → AI Advisor ── */}
-        {/* ✅ Fixed: added onPress navigation */}
         <Pressable
           style={styles.ctaBanner}
           onPress={() => {
