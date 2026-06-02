@@ -15,22 +15,17 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Canvas, useFrame } from '@react-three/fiber/native';
 import { useGLTF } from '@react-three/drei/native';
 import { useIsFocused } from '@react-navigation/native';
-import Animated, { FadeInUp, SlideInRight } from 'react-native-reanimated';
+import { BlurView } from 'expo-blur';
+import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
 import {
   Plus,
   Edit3,
   Trash2,
   BookOpen,
-  Target,
-  Award,
-  FileText,
   Calendar,
-  Flag,
   GraduationCap,
-  CheckCircle2,
-  Clock,
-  TrendingUp,
-  ChevronRight,
+  Layers,
+  ClipboardList,
 } from 'lucide-react-native';
 import useAcademicStore from '../../store/academicStore';
 import ModuleModal from './components/ModuleModal';
@@ -87,7 +82,7 @@ function BookModel() {
       <directionalLight position={[-3, 2, -2]} intensity={1.0} color="#e2e8f0" />
       <pointLight position={[0, 3, 0]} intensity={1.5} color="#ffffff" />
       <group ref={groupRef} position={[0, 0, 0]}>
-        <primitive object={scene} scale={0.015} />
+        <primitive object={scene} scale={9} />
       </group>
     </>
   );
@@ -112,6 +107,10 @@ const CourseDetailsScreen = () => {
   };
 
   const getGradeColor = (grade) => GRADE_COLORS[grade] || COLORS.textMuted;
+
+  // Calculate totals
+  const totalExams = modules.reduce((sum, m) => sum + (m.assessments || []).length, 0);
+  const totalTasks = modules.reduce((sum, m) => sum + (m.assignments || []).length, 0);
 
   if (modules.length === 0) {
     return (
@@ -157,7 +156,7 @@ const CourseDetailsScreen = () => {
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* 3D Book Model at the top */}
+        {/* 3D Book with overlay stats */}
         <View style={styles.canvasContainer}>
           {isFocused && (
             <Canvas dpr={1} gl={{ antialias: true, alpha: true }} camera={{ position: [0, 0, 3], fov: 55 }} style={{ flex: 1 }}>
@@ -166,6 +165,26 @@ const CourseDetailsScreen = () => {
               </Suspense>
             </Canvas>
           )}
+          {/* Stats overlay on the 3D model */}
+          <BlurView intensity={25} tint="dark" style={styles.canvasOverlay}>
+            <View style={styles.overlayStat}>
+              <Layers size={14} color={COLORS.white} />
+              <Text style={styles.overlayStatValue}>{modules.length}</Text>
+              <Text style={styles.overlayStatLabel}>Modules</Text>
+            </View>
+            <View style={styles.overlayDivider} />
+            <View style={styles.overlayStat}>
+              <ClipboardList size={14} color={COLORS.white} />
+              <Text style={styles.overlayStatValue}>{totalTasks}</Text>
+              <Text style={styles.overlayStatLabel}>Tasks</Text>
+            </View>
+            <View style={styles.overlayDivider} />
+            <View style={styles.overlayStat}>
+              <Calendar size={14} color={COLORS.white} />
+              <Text style={styles.overlayStatValue}>{totalExams}</Text>
+              <Text style={styles.overlayStatLabel}>Exams</Text>
+            </View>
+          </BlurView>
         </View>
 
         {/* Module Cards */}
@@ -177,7 +196,6 @@ const CourseDetailsScreen = () => {
 
           return (
             <Animated.View key={module.id} entering={FadeInUp.delay(index * 80)} style={styles.card}>
-              {/* Module Identity */}
               <View style={styles.cardIdentity}>
                 <LinearGradient colors={[module.color, module.color + '60']} style={styles.cardBadge}>
                   <BookOpen size={20} color={COLORS.white} />
@@ -191,12 +209,11 @@ const CourseDetailsScreen = () => {
                 </View>
               </View>
 
-              {/* Stats */}
               <View style={styles.statsInline}>
                 {[
                   { value: module.credits, label: 'credits' },
                   { value: total, label: 'tasks' },
-                  { value: `${pct}%`, label: 'complete', color: pct >= 80 ? COLORS.success : pct >= 40 ? COLORS.warning : COLORS.danger },
+                  { value: `${pct}%`, label: 'done', color: pct >= 80 ? COLORS.success : pct >= 40 ? COLORS.warning : COLORS.danger },
                   { value: assessments, label: 'exams' },
                 ].map((stat, i) => (
                   <React.Fragment key={i}>
@@ -209,12 +226,10 @@ const CourseDetailsScreen = () => {
                 ))}
               </View>
 
-              {/* Progress */}
               <View style={styles.progressTrack}>
                 <View style={[styles.progressFill, { width: `${pct}%`, backgroundColor: module.color }]} />
               </View>
 
-              {/* Actions */}
               <View style={styles.actionRow}>
                 <TouchableOpacity style={styles.actionChip} onPress={() => { setSelectedModule(module); setShowModuleModal(true); }}>
                   <Edit3 size={12} color={COLORS.primary} />
@@ -268,13 +283,50 @@ const styles = StyleSheet.create({
   emptyBtnGrad: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 28, paddingVertical: 16 },
   emptyBtnText: { fontSize: 16, fontFamily: 'JosefinSans-Bold', color: COLORS.white },
 
-  // 3D Canvas at top
+  // 3D Canvas with overlay
   canvasContainer: { 
     height: 180, 
     borderRadius: 24, 
     overflow: 'hidden', 
     marginBottom: 16,
     backgroundColor: COLORS.slate,
+    position: 'relative',
+  },
+  canvasOverlay: {
+    position: 'absolute',
+    bottom: 12,
+    left: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  overlayStat: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  overlayStatValue: {
+    fontSize: 16,
+    fontFamily: 'JosefinSans-Bold',
+    color: COLORS.white,
+  },
+  overlayStatLabel: {
+    fontSize: 9,
+    fontFamily: 'JosefinSans-SemiBold',
+    color: 'rgba(255,255,255,0.7)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  overlayDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: 'rgba(255,255,255,0.15)',
   },
 
   // Cards
