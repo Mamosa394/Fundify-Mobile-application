@@ -1,6 +1,4 @@
-// src/screens/AcademicPlanner/AssignmentScreen.js
-
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef, Suspense } from 'react';
 import {
   View,
   Text,
@@ -15,27 +13,25 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Canvas, useFrame } from '@react-three/fiber/native';
+import { useGLTF } from '@react-three/drei/native';
 import { useIsFocused } from '@react-navigation/native';
-import Animated, {
-  FadeInDown,
-  FadeInRight,
-} from 'react-native-reanimated';
+import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
 import {
-  FileText,
   Plus,
-  Filter,
   Search,
+  Filter,
   Edit3,
+  Trash2,
   Clock,
-  AlertTriangle,
   CheckCircle2,
-  ChevronRight,
+  AlertCircle,
+  FileText,
 } from 'lucide-react-native';
 import useAcademicStore from '../../store/academicStore';
 import AssignmentModal from './components/AssignmentModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CARD_PADDING = 16;
+const PADDING = 20;
 
 const COLORS = {
   bgStart: '#F8FAFC',
@@ -55,42 +51,25 @@ const COLORS = {
   white: '#FFFFFF',
 };
 
-// 3D Assignment Object
-function AssignmentObject({ count }) {
-  const groupRef = React.useRef();
-  
+function BookModel() {
+  const groupRef = useRef();
+  const { scene } = useGLTF(require('./models/books.glb'));
+
   useFrame((state) => {
     const t = state.clock.getElapsedTime();
     if (groupRef.current) {
       groupRef.current.rotation.y = Math.sin(t * 0.3) * 0.4;
-      groupRef.current.position.y = Math.sin(t * 0.5) * 0.15;
+      groupRef.current.position.y = Math.sin(t * 0.5) * 0.1;
     }
   });
 
   return (
     <>
-      <ambientLight intensity={1.2} />
-      <pointLight position={[5, 5, 5]} intensity={1.5} />
-      <group ref={groupRef}>
-        {[...Array(Math.min(count, 6))].map((_, i) => (
-          <mesh
-            key={i}
-            position={[
-              Math.sin(i * 1.2) * 1.2,
-              (i - 1.5) * 0.35,
-              Math.cos(i * 1.2) * 0.8,
-            ]}
-            rotation={[i * 0.3, i * 0.5, 0]}
-          >
-            <boxGeometry args={[0.5, 0.08, 0.35]} />
-            <meshStandardMaterial color="#475569" roughness={0.3} metalness={0.2} />
-          </mesh>
-        ))}
-        <mesh>
-          <torusGeometry args={[1.5, 0.03, 16, 60]} />
-          <meshBasicMaterial color="#CBD5E1" transparent opacity={0.3} />
-        </mesh>
-      </group>
+      <ambientLight intensity={2.5} />
+      <directionalLight position={[5, 5, 5]} intensity={1.5} />
+      <directionalLight position={[-3, 2, -2]} intensity={0.8} color="#e2e8f0" />
+      <pointLight position={[0, 3, 0]} intensity={1.2} color="#ffffff" />
+      <primitive ref={groupRef} object={scene} scale={2.0} />
     </>
   );
 }
@@ -100,32 +79,17 @@ const AssignmentScreen = () => {
   const [selectedAssignment, setSelectedAssignment] = useState(null);
   const [selectedModuleForAssignment, setSelectedModuleForAssignment] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
-  const [sortBy, setSortBy] = useState('date');
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const isFocused = useIsFocused();
 
-  const {
-    modules,
-    fetchModules,
-    fetchAnalytics,
-    fetchInsights,
-    deleteAssignment,
-  } = useAcademicStore();
+  const { modules, fetchModules, fetchAnalytics, fetchInsights, deleteAssignment } = useAcademicStore();
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     await Promise.all([fetchModules(), fetchAnalytics(), fetchInsights()]);
-  };
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await loadData();
-    setRefreshing(false);
   };
 
   const getStatusColor = (status) => {
@@ -139,101 +103,49 @@ const AssignmentScreen = () => {
   };
 
   const getDaysUntil = (dateString) => {
+    if (!dateString) return 0;
     const now = new Date();
     const date = new Date(dateString);
-    const diffTime = date - now;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
-  };
-
-  const handleEditAssignment = (assignment) => {
-    const module = modules.find(m => m.id === assignment.moduleId);
-    setSelectedModuleForAssignment(module || { id: assignment.moduleId });
-    setSelectedAssignment(assignment);
-    setShowModal(true);
-  };
-
-  const handleAddAssignment = () => {
-    setSelectedModuleForAssignment(null);
-    setSelectedAssignment(null);
-    setShowModal(true);
-  };
-
-  const handleDeleteAssignment = (moduleId, assignment) => {
-    Alert.alert(
-      'Delete Assignment',
-      `Delete "${assignment.title}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            await deleteAssignment(moduleId, assignment.id);
-            await loadData();
-          },
-        },
-      ]
-    );
+    return Math.ceil((date - now) / (1000 * 60 * 60 * 24));
   };
 
   const allAssignments = useMemo(() => {
-    let assignments = [];
-    
-    modules.forEach((module) => {
-      (module.assignments || []).forEach((assignment) => {
-        assignments.push({
-          ...assignment,
-          moduleName: module.moduleName,
-          moduleCode: module.moduleCode,
-          moduleColor: module.color,
-          moduleId: module.id,
-        });
+    let list = [];
+    modules.forEach((m) => {
+      (m.assignments || []).forEach((a) => {
+        list.push({ ...a, moduleName: m.moduleName, moduleColor: m.color, moduleId: m.id });
       });
     });
-
-    if (filterStatus !== 'all') {
-      assignments = assignments.filter((a) => a.status === filterStatus);
-    }
-
-    if (searchQuery) {
-      assignments = assignments.filter((a) =>
-        a.title.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-
-    switch (sortBy) {
-      case 'date':
-        assignments.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
-        break;
-      case 'status':
-        assignments.sort((a, b) => a.status.localeCompare(b.status));
-        break;
-      case 'weight':
-        assignments.sort((a, b) => (b.weightPercentage || 0) - (a.weightPercentage || 0));
-        break;
-    }
-
-    return assignments;
-  }, [modules, filterStatus, sortBy, searchQuery]);
+    if (filterStatus !== 'all') list = list.filter((a) => a.status === filterStatus);
+    if (searchQuery) list = list.filter((a) => (a.title || '').toLowerCase().includes(searchQuery.toLowerCase()));
+    list.sort((a, b) => new Date(a.dueDate || 0) - new Date(b.dueDate || 0));
+    return list;
+  }, [modules, filterStatus, searchQuery]);
 
   const stats = useMemo(() => {
     const total = allAssignments.length;
     const completed = allAssignments.filter(a => a.status === 'completed').length;
-    const overdue = allAssignments.filter(a => a.status === 'overdue').length;
-    const pending = allAssignments.filter(a => a.status === 'pending').length;
+    const overdue = allAssignments.filter(a => a.status === 'overdue' || 
+      (getDaysUntil(a.dueDate) < 0 && a.status !== 'completed')).length;
+    const pending = allAssignments.filter(a => a.status === 'pending' || a.status === 'submitted').length;
     return { total, completed, overdue, pending };
   }, [allAssignments]);
 
+  const handleEdit = (assignment) => {
+    const mod = modules.find((m) => m.id === assignment.moduleId);
+    setSelectedModuleForAssignment(mod || { id: assignment.moduleId });
+    setSelectedAssignment(assignment);
+    setShowModal(true);
+  };
+
   return (
     <LinearGradient colors={[COLORS.bgStart, COLORS.bgMid, COLORS.bgEnd]} style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>Assignments</Text>
-          <Text style={styles.subtitle}>{stats.total} total • {stats.completed} completed</Text>
+          <Text style={styles.headerTitle}>Assignments</Text>
+          <Text style={styles.headerSubtitle}>{stats.total} total • {stats.completed} done</Text>
         </View>
-        <TouchableOpacity style={styles.addBtn} onPress={handleAddAssignment} activeOpacity={0.8}>
+        <TouchableOpacity style={styles.addBtn} onPress={() => { setSelectedModuleForAssignment(null); setSelectedAssignment(null); setShowModal(true); }} activeOpacity={0.8}>
           <LinearGradient colors={[COLORS.primary, COLORS.primaryDark]} style={styles.addBtnGrad}>
             <Plus size={20} color={COLORS.white} />
           </LinearGradient>
@@ -243,474 +155,160 @@ const AssignmentScreen = () => {
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await loadData(); setRefreshing(false); }} tintColor={COLORS.primary} />}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* 3D Canvas */}
-        {allAssignments.length > 0 && (
-          <View style={styles.canvasContainer}>
-            {isFocused && (
-              <Canvas dpr={1} gl={{ antialias: true, alpha: true }} camera={{ position: [0, 0, 4.5], fov: 45 }}>
-                <AssignmentObject count={allAssignments.length} />
-              </Canvas>
-            )}
-          </View>
-        )}
+        <View style={styles.canvasContainer}>
+          {isFocused && (
+            <Canvas dpr={1} gl={{ antialias: true, alpha: true }} camera={{ position: [0, 0.0, 2.5], fov: 50 }}>
+              <Suspense fallback={null}>
+                <BookModel />
+              </Suspense>
+            </Canvas>
+          )}
+        </View>
 
-        {/* Stats */}
-        <View style={styles.statsRow}>
+        <View style={styles.statsGrid}>
           {[
-            { label: 'Total', value: stats.total, color: COLORS.primary },
-            { label: 'Done', value: stats.completed, color: COLORS.success },
-            { label: 'Overdue', value: stats.overdue, color: COLORS.danger },
-            { label: 'Pending', value: stats.pending, color: COLORS.warning },
+            { label: 'Total', value: stats.total, color: COLORS.primary, icon: FileText },
+            { label: 'Completed', value: stats.completed, color: COLORS.success, icon: CheckCircle2 },
+            { label: 'Overdue', value: stats.overdue, color: COLORS.danger, icon: AlertCircle },
+            { label: 'Pending', value: stats.pending, color: COLORS.warning, icon: Clock },
           ].map((stat, i) => (
-            <View key={i} style={styles.statCard}>
-              <Text style={[styles.statValue, { color: stat.color }]}>{stat.value}</Text>
+            <Animated.View key={i} entering={FadeInDown.delay(i * 80)} style={styles.statCard}>
+              <stat.icon size={16} color={stat.color} />
+              <Text style={[styles.statValue, { color: stat.value > 0 ? stat.color : COLORS.textMuted }]}>{stat.value}</Text>
               <Text style={styles.statLabel}>{stat.label}</Text>
-            </View>
+            </Animated.View>
           ))}
         </View>
 
-        {/* Search & Filters */}
-        <View style={styles.filterRow}>
+        <View style={styles.toolbar}>
           <View style={styles.searchBox}>
             <Search size={14} color={COLORS.textMuted} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search..."
-              placeholderTextColor={COLORS.textMuted}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
+            <TextInput style={styles.searchInput} placeholder="Search assignments..." placeholderTextColor={COLORS.textMuted} value={searchQuery} onChangeText={setSearchQuery} />
           </View>
-          <TouchableOpacity style={styles.filterBtn} onPress={() => setShowFilters(!showFilters)}>
-            <Filter size={16} color={showFilters ? COLORS.primary : COLORS.textSecondary} />
+          <TouchableOpacity style={[styles.filterBtn, showFilters && styles.filterBtnActive]} onPress={() => setShowFilters(!showFilters)}>
+            <Filter size={16} color={showFilters ? COLORS.white : COLORS.textSecondary} />
           </TouchableOpacity>
         </View>
 
         {showFilters && (
-          <View style={styles.filtersRow}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
-              {['all', 'pending', 'submitted', 'completed', 'overdue'].map((status) => (
-                <TouchableOpacity
-                  key={status}
-                  style={[styles.filterChip, filterStatus === status && styles.filterChipActive]}
-                  onPress={() => setFilterStatus(status)}
-                >
-                  <Text style={[styles.filterChipText, filterStatus === status && styles.filterChipTextActive]}>
-                    {status.charAt(0).toUpperCase() + status.slice(1)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+          <View style={styles.filterTabs}>
+            {['all', 'pending', 'submitted', 'completed', 'overdue'].map((s) => (
+              <TouchableOpacity key={s} style={[styles.filterTab, filterStatus === s && styles.filterTabActive]} onPress={() => setFilterStatus(s)}>
+                <Text style={[styles.filterTabText, filterStatus === s && styles.filterTabTextActive]}>{s.charAt(0).toUpperCase() + s.slice(1)}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
         )}
 
-        {/* Assignment List */}
         {allAssignments.length === 0 ? (
           <View style={styles.emptyState}>
-            <View style={styles.emptyIcon}>
-              <FileText size={40} color={COLORS.primary} />
-            </View>
-            <Text style={styles.emptyTitle}>No Assignments</Text>
-            <Text style={styles.emptySubtitle}>
-              {modules.length === 0 ? 'Add modules first' : 'Tap + to create one'}
-            </Text>
+            <View style={styles.emptyIcon}><FileText size={32} color={COLORS.primary} /></View>
+            <Text style={styles.emptyTitle}>No assignments yet</Text>
+            <Text style={styles.emptySub}>{modules.length === 0 ? 'Add a module first' : 'Tap + to create one'}</Text>
           </View>
         ) : (
-          allAssignments.map((assignment, index) => {
-            const daysUntil = getDaysUntil(assignment.dueDate);
-            const isOverdue = daysUntil < 0 && assignment.status !== 'completed';
-            const statusColor = getStatusColor(assignment.status);
-            
+          allAssignments.map((item, i) => {
+            const daysUntil = getDaysUntil(item.dueDate);
+            const isOverdue = daysUntil < 0 && item.status !== 'completed';
+            const statusColor = getStatusColor(item.status);
             return (
-              <Animated.View key={assignment.id} entering={FadeInRight.delay(100 + index * 50)}>
-                <View style={styles.assignmentCard}>
-                  <View style={styles.assignmentTop}>
-                    <View style={styles.assignmentLeft}>
-                      <View style={[styles.moduleDot, { backgroundColor: assignment.moduleColor }]} />
-                      <View>
-                        <Text style={styles.assignmentTitle} numberOfLines={1}>{assignment.title}</Text>
-                        <Text style={styles.assignmentModule}>{assignment.moduleName}</Text>
+              <Animated.View key={item.id} entering={FadeInRight.delay(i * 60)}>
+                <TouchableOpacity style={styles.card} onPress={() => handleEdit(item)} activeOpacity={0.7}>
+                  <View style={[styles.cardStrip, { backgroundColor: statusColor }]} />
+                  <View style={styles.cardContent}>
+                    <View style={styles.cardTop}>
+                      <View style={styles.cardInfo}>
+                        <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
+                        <View style={styles.cardMeta}>
+                          <View style={[styles.dot, { backgroundColor: item.moduleColor }]} />
+                          <Text style={styles.moduleName}>{item.moduleName}</Text>
+                        </View>
+                      </View>
+                      <View style={[styles.statusBadge, { backgroundColor: statusColor + '15' }]}>
+                        <Text style={[styles.statusText, { color: statusColor }]}>{item.status}</Text>
                       </View>
                     </View>
-                    <View style={[styles.statusBadge, { backgroundColor: statusColor + '15' }]}>
-                      <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-                      <Text style={[styles.statusText, { color: statusColor }]}>
-                        {assignment.status}
-                      </Text>
+                    <View style={styles.cardBottom}>
+                      <View style={styles.dueDate}>
+                        <Clock size={11} color={isOverdue ? COLORS.danger : COLORS.textSecondary} />
+                        <Text style={[styles.dueText, isOverdue && { color: COLORS.danger }]}>{isOverdue ? `${Math.abs(daysUntil)}d overdue` : daysUntil === 0 ? 'Due today' : `Due in ${daysUntil}d`}</Text>
+                      </View>
+                      <View style={styles.cardActions}>
+                        <TouchableOpacity onPress={() => handleEdit(item)} style={styles.actionBtn} hitSlop={8}><Edit3 size={14} color={COLORS.primary} /></TouchableOpacity>
+                        <TouchableOpacity onPress={() => { Alert.alert('Delete', `Remove "${item.title}"?`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: async () => { await deleteAssignment(item.moduleId, item.id); await loadData(); } }]); }} style={styles.actionBtn} hitSlop={8}><Trash2 size={14} color={COLORS.textMuted} /></TouchableOpacity>
+                      </View>
                     </View>
-                  </View>
-
-                  <View style={styles.assignmentMeta}>
-                    <View style={styles.metaItem}>
-                      <Clock size={12} color={isOverdue ? COLORS.danger : COLORS.textSecondary} />
-                      <Text style={[styles.metaText, isOverdue && { color: COLORS.danger }]}>
-                        {isOverdue 
-                          ? `${Math.abs(daysUntil)}d overdue`
-                          : daysUntil === 0 
-                          ? 'Due today' 
-                          : `${daysUntil}d left`}
-                      </Text>
-                    </View>
-                    {assignment.weightPercentage > 0 && (
-                      <Text style={styles.metaWeight}>{assignment.weightPercentage}% weight</Text>
+                    {item.marksObtained > 0 && (
+                      <View style={styles.marksRow}>
+                        <View style={styles.marksBar}><View style={[styles.marksFill, { width: `${(item.marksObtained / item.totalMarks) * 100}%`, backgroundColor: statusColor }]} /></View>
+                        <Text style={styles.marksText}>{item.marksObtained}/{item.totalMarks}</Text>
+                      </View>
                     )}
                   </View>
-
-                  {assignment.marksObtained > 0 && (
-                    <View style={styles.marksRow}>
-                      <View style={styles.marksBar}>
-                        <View style={[styles.marksFill, { width: `${(assignment.marksObtained / assignment.totalMarks) * 100}%`, backgroundColor: statusColor }]} />
-                      </View>
-                      <Text style={styles.marksText}>{assignment.marksObtained}/{assignment.totalMarks}</Text>
-                    </View>
-                  )}
-
-                  <View style={styles.assignmentActions}>
-                    <TouchableOpacity style={styles.editBtn} onPress={() => handleEditAssignment(assignment)}>
-                      <Edit3 size={13} color={COLORS.primary} />
-                      <Text style={styles.editBtnText}>Edit</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDeleteAssignment(assignment.moduleId, assignment)}>
-                      <Text style={styles.deleteBtnText}>Delete</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
+                </TouchableOpacity>
               </Animated.View>
             );
           })
         )}
-
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      <AssignmentModal
-        visible={showModal}
-        module={selectedModuleForAssignment}
-        assignment={selectedAssignment}
-        onClose={() => {
-          setShowModal(false);
-          loadData();
-        }}
-      />
+      <AssignmentModal visible={showModal} module={selectedModuleForAssignment} assignment={selectedAssignment} onClose={() => { setShowModal(false); loadData(); }} />
     </LinearGradient>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: CARD_PADDING,
-    paddingTop: Platform.OS === 'ios' ? 54 : 36,
-    paddingBottom: 14,
-  },
-  title: {
-    fontSize: 24,
-    fontFamily: 'JosefinSans-Bold',
-    color: COLORS.text,
-  },
-  subtitle: {
-    fontSize: 12,
-    fontFamily: 'JosefinSans-SemiBold',
-    color: COLORS.textSecondary,
-    marginTop: 2,
-  },
-  addBtn: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    shadowColor: COLORS.primaryDark,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.24,
-    shadowRadius: 10,
-    elevation: 4,
-  },
-  addBtnGrad: {
-    width: 42,
-    height: 42,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  container: { flex: 1 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: PADDING, paddingTop: Platform.OS === 'ios' ? 54 : 36, paddingBottom: 12 },
+  headerTitle: { fontSize: 24, fontFamily: 'JosefinSans-Bold', color: COLORS.text },
+  headerSubtitle: { fontSize: 12, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textSecondary, marginTop: 2 },
+  addBtn: { borderRadius: 16, overflow: 'hidden', shadowColor: COLORS.primaryDark, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.24, shadowRadius: 10, elevation: 4 },
+  addBtnGrad: { width: 42, height: 42, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
   scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: CARD_PADDING },
-
-  // 3D Canvas
-  canvasContainer: {
-    width: SCREEN_WIDTH - CARD_PADDING * 2,
-    height: 120,
-    marginBottom: 8,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-
-  // Stats
-  statsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 14,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: COLORS.surfaceGlass,
-    borderRadius: 14,
-    padding: 12,
-    borderWidth: 1.2,
-    borderColor: COLORS.surfaceGlassBorder,
-    alignItems: 'center',
-    gap: 2,
-    shadowColor: COLORS.border,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  statValue: {
-    fontSize: 18,
-    fontFamily: 'JosefinSans-Bold',
-  },
-  statLabel: {
-    fontSize: 10,
-    fontFamily: 'JosefinSans-Bold',
-    color: COLORS.textMuted,
-    letterSpacing: 0.5,
-  },
-
-  // Filters
-  filterRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 10,
-  },
-  searchBox: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    height: 42,
-    borderRadius: 14,
-    backgroundColor: COLORS.surfaceGlass,
-    borderWidth: 1.2,
-    borderColor: COLORS.surfaceGlassBorder,
-    paddingHorizontal: 14,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 13,
-    fontFamily: 'JosefinSans-SemiBold',
-    color: COLORS.text,
-  },
-  filterBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    backgroundColor: COLORS.surfaceGlass,
-    borderWidth: 1.2,
-    borderColor: COLORS.surfaceGlassBorder,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  filtersRow: {
-    marginBottom: 12,
-  },
-  filterScroll: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  filterChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 10,
-    backgroundColor: COLORS.surfaceGlass,
-    borderWidth: 1.2,
-    borderColor: COLORS.surfaceGlassBorder,
-  },
-  filterChipActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  filterChipText: {
-    fontSize: 11,
-    fontFamily: 'JosefinSans-Bold',
-    color: COLORS.textSecondary,
-  },
-  filterChipTextActive: {
-    color: COLORS.white,
-  },
-
-  // Empty State
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 60,
-  },
-  emptyIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 24,
-    backgroundColor: COLORS.surfaceGlass,
-    borderWidth: 1.2,
-    borderColor: COLORS.surfaceGlassBorder,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontFamily: 'JosefinSans-Bold',
-    color: COLORS.text,
-  },
-  emptySubtitle: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-    fontFamily: 'JosefinSans-SemiBold',
-    marginTop: 4,
-  },
-
-  // Assignment Card
-  assignmentCard: {
-    backgroundColor: COLORS.surfaceGlass,
-    borderRadius: 16,
-    borderWidth: 1.2,
-    borderColor: COLORS.surfaceGlassBorder,
-    padding: 14,
-    marginBottom: 10,
-    shadowColor: COLORS.border,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  assignmentTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 10,
-  },
-  assignmentLeft: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    flex: 1,
-    gap: 8,
-  },
-  moduleDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginTop: 4,
-  },
-  assignmentTitle: {
-    fontSize: 14,
-    fontFamily: 'JosefinSans-Bold',
-    color: COLORS.text,
-    marginBottom: 2,
-  },
-  assignmentModule: {
-    fontSize: 11,
-    fontFamily: 'JosefinSans-SemiBold',
-    color: COLORS.textMuted,
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  statusText: {
-    fontSize: 10,
-    fontFamily: 'JosefinSans-Bold',
-    textTransform: 'capitalize',
-  },
-  assignmentMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  metaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  metaText: {
-    fontSize: 11,
-    fontFamily: 'JosefinSans-SemiBold',
-    color: COLORS.textSecondary,
-  },
-  metaWeight: {
-    fontSize: 11,
-    fontFamily: 'JosefinSans-Bold',
-    color: COLORS.textMuted,
-  },
-  marksRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 10,
-  },
-  marksBar: {
-    flex: 1,
-    height: 4,
-    backgroundColor: COLORS.border,
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  marksFill: {
-    height: '100%',
-    borderRadius: 2,
-  },
-  marksText: {
-    fontSize: 11,
-    fontFamily: 'JosefinSans-Bold',
-    color: COLORS.textSecondary,
-  },
-  assignmentActions: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-  },
-  editBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: COLORS.primary + '10',
-  },
-  editBtnText: {
-    fontSize: 12,
-    fontFamily: 'JosefinSans-Bold',
-    color: COLORS.primary,
-  },
-  deleteBtn: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: COLORS.danger + '10',
-  },
-  deleteBtnText: {
-    fontSize: 12,
-    fontFamily: 'JosefinSans-Bold',
-    color: COLORS.danger,
-  },
+  scrollContent: { paddingHorizontal: PADDING },
+  canvasContainer: { height: 200, borderRadius: 20, overflow: 'hidden', marginBottom: 16 },
+  statsGrid: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  statCard: { flex: 1, backgroundColor: COLORS.surfaceGlass, borderRadius: 16, padding: 14, borderWidth: 1.2, borderColor: COLORS.surfaceGlassBorder, alignItems: 'center', gap: 6, shadowColor: COLORS.border, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 2 },
+  statValue: { fontSize: 20, fontFamily: 'JosefinSans-Bold' },
+  statLabel: { fontSize: 10, fontFamily: 'JosefinSans-Bold', color: COLORS.textMuted, letterSpacing: 0.5 },
+  toolbar: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  searchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, height: 42, borderRadius: 14, backgroundColor: COLORS.surfaceGlass, borderWidth: 1.2, borderColor: COLORS.surfaceGlassBorder, paddingHorizontal: 14 },
+  searchInput: { flex: 1, fontSize: 13, fontFamily: 'JosefinSans-SemiBold', color: COLORS.text },
+  filterBtn: { width: 42, height: 42, borderRadius: 14, backgroundColor: COLORS.surfaceGlass, borderWidth: 1.2, borderColor: COLORS.surfaceGlassBorder, justifyContent: 'center', alignItems: 'center' },
+  filterBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  filterTabs: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
+  filterTab: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 18, backgroundColor: COLORS.surfaceGlass, borderWidth: 1.2, borderColor: COLORS.surfaceGlassBorder },
+  filterTabActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  filterTabText: { fontSize: 11, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textSecondary },
+  filterTabTextActive: { color: COLORS.white, fontFamily: 'JosefinSans-Bold' },
+  emptyState: { alignItems: 'center', paddingTop: 40 },
+  emptyIcon: { width: 72, height: 72, borderRadius: 20, backgroundColor: COLORS.surfaceGlass, borderWidth: 1.2, borderColor: COLORS.surfaceGlassBorder, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+  emptyTitle: { fontSize: 16, fontFamily: 'JosefinSans-Bold', color: COLORS.text },
+  emptySub: { fontSize: 13, color: COLORS.textSecondary, fontFamily: 'JosefinSans-SemiBold', textAlign: 'center', marginTop: 4, paddingHorizontal: 30 },
+  card: { flexDirection: 'row', backgroundColor: COLORS.surfaceGlass, borderRadius: 16, borderWidth: 1.2, borderColor: COLORS.surfaceGlassBorder, marginBottom: 10, overflow: 'hidden', shadowColor: COLORS.border, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 },
+  cardStrip: { width: 3 },
+  cardContent: { flex: 1, padding: 14 },
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
+  cardInfo: { flex: 1, marginRight: 10 },
+  cardTitle: { fontSize: 14, fontFamily: 'JosefinSans-Bold', color: COLORS.text, marginBottom: 4 },
+  cardMeta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  dot: { width: 6, height: 6, borderRadius: 3 },
+  moduleName: { fontSize: 11, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textMuted },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  statusText: { fontSize: 10, fontFamily: 'JosefinSans-Bold', textTransform: 'capitalize' },
+  cardBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  dueDate: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  dueText: { fontSize: 11, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textSecondary },
+  cardActions: { flexDirection: 'row', gap: 2 },
+  actionBtn: { padding: 4 },
+  marksRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: COLORS.border },
+  marksBar: { flex: 1, height: 4, backgroundColor: COLORS.border, borderRadius: 2, overflow: 'hidden' },
+  marksFill: { height: '100%', borderRadius: 2 },
+  marksText: { fontSize: 10, fontFamily: 'JosefinSans-Bold', color: COLORS.textSecondary },
 });
 
 export default AssignmentScreen;

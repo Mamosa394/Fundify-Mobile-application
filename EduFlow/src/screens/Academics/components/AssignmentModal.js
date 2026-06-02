@@ -214,7 +214,7 @@ const AssignmentModal = ({ visible, module, assignment, onClose }) => {
             <Text style={styles.label}>TITLE</Text>
             <TextInput
               style={styles.input}
-              placeholder="Week 5 Problem Set"
+              placeholder="Assingment Title"
               placeholderTextColor={COLORS.textMuted}
               value={formData.title}
               onChangeText={(text) => setFormData({ ...formData, title: text })}

@@ -1,6 +1,6 @@
 // src/screens/AcademicPlanner/components/ModuleModal.js
 
-import React, { useState, useEffect, useRef } from 'react'; // Added useRef
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -34,7 +34,6 @@ const ModuleModal = ({ visible, module, onClose }) => {
   const [formData, setFormData] = useState({});
   const { addModule, updateModule, currentSemester } = useAcademicStore();
   
-  // Refs for auto-scrolling
   const scrollViewRef = useRef(null);
   const fieldPositions = useRef({});
 
@@ -60,17 +59,15 @@ const ModuleModal = ({ visible, module, onClose }) => {
     }
   }, [module, visible]);
 
-  // Dynamically capture the Y position of each input field group
   const handleLayout = (fieldName) => (event) => {
     fieldPositions.current[fieldName] = event.nativeEvent.layout.y;
   };
 
-  // Smoothly scroll to the target field coordinate when focused
   const handleFocus = (fieldName) => {
     const yPosition = fieldPositions.current[fieldName];
     if (yPosition !== undefined) {
       scrollViewRef.current?.scrollTo({
-        y: Math.max(0, yPosition - 10), // Offset slightly for clean padding
+        y: Math.max(0, yPosition - 10),
         animated: true,
       });
     }
@@ -79,20 +76,25 @@ const ModuleModal = ({ visible, module, onClose }) => {
   const handleSubmit = async () => {
     Keyboard.dismiss();
     
-    if (!formData.moduleName || !formData.moduleCode || !formData.credits) {
+    const moduleName = (formData.moduleName || '').trim();
+    const moduleCode = (formData.moduleCode || '').trim();
+    const credits = (formData.credits || '').toString().trim();
+    const lecturerName = (formData.lecturerName || '').trim();
+    
+    if (!moduleName || !moduleCode || !credits) {
       Alert.alert('Missing Fields', 'Please fill in module name, code, and credits.');
       return;
     }
 
     try {
       const moduleData = {
-        moduleName: formData.moduleName.trim(),
-        moduleCode: formData.moduleCode.trim(),
-        credits: Number(formData.credits),
-        lecturerName: formData.lecturerName.trim(),
+        moduleName,
+        moduleCode,
+        credits: Number(credits),
+        lecturerName,
         semester: currentSemester,
-        color: formData.color,
-        targetGrade: formData.targetGrade,
+        color: formData.color || '#475569',
+        targetGrade: formData.targetGrade || 'B',
         currentGrade: module?.currentGrade || 'F',
       };
 
@@ -104,7 +106,7 @@ const ModuleModal = ({ visible, module, onClose }) => {
 
       onClose();
     } catch (error) {
-      Alert.alert('Error', error.message);
+      Alert.alert('Error', error.message || 'Failed to save module');
     }
   };
 
@@ -127,7 +129,6 @@ const ModuleModal = ({ visible, module, onClose }) => {
       />
       
       <View style={styles.container}>
-        {/* Fixed Header */}
         <View style={styles.header}>
           <Text style={styles.title}>{module ? 'Edit Module' : 'New Module'}</Text>
           <TouchableOpacity 
@@ -143,7 +144,6 @@ const ModuleModal = ({ visible, module, onClose }) => {
           style={styles.keyboardAvoid}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
         >
-          {/* Linked ScrollView Ref */}
           <ScrollView 
             ref={scrollViewRef}
             style={styles.scrollArea}
@@ -251,7 +251,6 @@ const ModuleModal = ({ visible, module, onClose }) => {
             </View>
           </ScrollView>
 
-          {/* Fixed Submit Button */}
           <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit} activeOpacity={0.8}>
             <LinearGradient 
               colors={['#475569', '#334155']} 
@@ -317,7 +316,7 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
   fieldBlock: {
-    marginTop: 14, // Moved top spacing wrapper block level to ensure flawless layout tracking
+    marginTop: 14,
   },
   label: {
     fontSize: 10,
