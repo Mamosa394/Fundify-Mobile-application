@@ -1,6 +1,6 @@
-// src/screens/AcademicPlanner/CourseDetailsScreen.js
+// src/screens/Academics/CourseDetailsScreen.js
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import {
   View,
   Text,
@@ -11,50 +11,56 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, {
-  FadeInDown,
-  FadeInRight,
-  SlideInDown,
-} from 'react-native-reanimated';
+import { Canvas, useFrame } from '@react-three/fiber/native';
+import { useGLTF } from '@react-three/drei/native';
+import { useIsFocused } from '@react-navigation/native';
+import { BlurView } from 'expo-blur';
+import Animated, { FadeInDown, FadeInRight, FadeInUp } from 'react-native-reanimated';
+import Svg, { Circle as SvgCircle, Line, Polyline, Text as SvgText, Path, G, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import {
-  BookOpen,
-  Clock,
-  Calendar,
-  Flag,
-  ChevronRight,
   Plus,
   Edit3,
+  Trash2,
+  BookOpen,
   Target,
   Award,
-  BarChart3,
   FileText,
+  Calendar,
+  Flag,
   GraduationCap,
-  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  TrendingUp,
+  Zap,
+  Layers,
 } from 'lucide-react-native';
 import useAcademicStore from '../../store/academicStore';
 import ModuleModal from './components/ModuleModal';
 import AssessmentModal from './components/AssessmentModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CARD_PADDING = 20;
+const PADDING = 16;
 
 const COLORS = {
-  bg: '#F8FAFC',
-  surface: '#FFFFFF',
-  surfaceGlass: 'rgba(255, 255, 255, 0.7)',
-  primary: '#3B82F6',
-  secondary: '#8B5CF6',
-  success: '#10B981',
-  warning: '#F59E0B',
-  danger: '#EF4444',
+  bgStart: '#F8FAFC',
+  bgMid: '#E2E8F0',
+  bgEnd: '#CBD5E1',
+  surfaceGlass: 'rgba(255, 255, 255, 0.92)',
+  surfaceGlassBorder: 'rgba(255, 255, 255, 0.95)',
+  primary: '#475569',
+  primaryDark: '#334155',
   text: '#0F172A',
   textSecondary: '#64748B',
   textMuted: '#94A3B8',
-  border: '#E2E8F0',
-  borderLight: 'rgba(226, 232, 240, 0.6)',
-  gradient1: ['#3B82F6', '#8B5CF6'],
+  success: '#10B981',
+  warning: '#F59E0B',
+  danger: '#DC2626',
+  border: '#CBD5E1',
+  white: '#FFFFFF',
+  accent: '#6366F1',
+  amber: '#F59E0B',
+  slate: '#1e293b',
 };
 
 const GRADE_COLORS = {
@@ -65,498 +71,356 @@ const GRADE_COLORS = {
   'F': '#DC2626',
 };
 
+// ============================================================
+// 3D BOOK MODEL WITH GLOW
+// ============================================================
+function BookModel() {
+  const groupRef = useRef();
+  const glowRef = useRef();
+  const { scene } = useGLTF(require('./models/Book.glb'));
+
+  useFrame((state) => {
+    const t = state.clock.getElapsedTime();
+    if (groupRef.current) {
+      groupRef.current.rotation.y = Math.sin(t * 0.3) * 0.5;
+      groupRef.current.position.y = Math.sin(t * 0.5) * 0.12;
+    }
+    if (glowRef.current) {
+      glowRef.current.scale.setScalar(1 + Math.sin(t * 1.5) * 0.06);
+      glowRef.current.material.opacity = 0.15 + Math.sin(t * 2) * 0.05;
+    }
+  });
+
+  return (
+    <>
+      <ambientLight intensity={2.5} />
+      <directionalLight position={[5, 5, 5]} intensity={1.8} />
+      <directionalLight position={[-3, 2, -2]} intensity={0.8} color="#e2e8f0" />
+      <pointLight position={[0, 3, 0]} intensity={1.5} color="#ffffff" />
+      {/* Glow sphere behind the book */}
+      <mesh ref={glowRef} position={[0, 0, -0.5]}>
+        <sphereGeometry args={[1.2, 32, 32]} />
+        <meshBasicMaterial color="#6366F1" transparent opacity={0.12} />
+      </mesh>
+      {/* Book */}
+      <group ref={groupRef} position={[0, 0, 0]}>
+        <primitive object={scene} scale={0.015} />
+      </group>
+    </>
+  );
+}
+
+// ============================================================
+// PROGRESS RING SVG
+// ============================================================
+function ProgressRing({ progress, size = 60, strokeWidth = 4, color = COLORS.primary }) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const strokeDashoffset = circumference - (progress / 100) * circumference;
+
+  return (
+    <Svg width={size} height={size}>
+      <SvgCircle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        stroke={COLORS.border}
+        strokeWidth={strokeWidth}
+        fill="transparent"
+      />
+      <SvgCircle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        stroke={color}
+        strokeWidth={strokeWidth}
+        fill="transparent"
+        strokeDasharray={`${circumference} ${circumference}`}
+        strokeDashoffset={strokeDashoffset}
+        strokeLinecap="round"
+        rotation="-90"
+        origin={`${size / 2}, ${size / 2}`}
+      />
+    </Svg>
+  );
+}
+
+// ============================================================
+// MAIN SCREEN
+// ============================================================
 const CourseDetailsScreen = () => {
   const [selectedModule, setSelectedModule] = useState(null);
-  const [activeView, setActiveView] = useState('details');
   const [showModuleModal, setShowModuleModal] = useState(false);
   const [showAssessmentModal, setShowAssessmentModal] = useState(false);
   const [selectedAssessment, setSelectedAssessment] = useState(null);
+  const isFocused = useIsFocused();
 
-  const {
-    modules,
-    fetchModules,
-    fetchAnalytics,
-    fetchInsights,
-    deleteModule,
-    addAssessment,
-    updateAssessment,
-    deleteAssignment,
-  } = useAcademicStore();
+  const { modules, fetchModules, fetchAnalytics, fetchInsights, deleteModule } = useAcademicStore();
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     await Promise.all([fetchModules(), fetchAnalytics(), fetchInsights()]);
   };
 
-  const getGradeColor = (grade) => {
-    return GRADE_COLORS[grade] || COLORS.textMuted;
-  };
+  const getGradeColor = (grade) => GRADE_COLORS[grade] || COLORS.textMuted;
 
-  const handleEditModule = (module) => {
-    setSelectedModule(module);
-    setShowModuleModal(true);
-  };
-
+  const handleEditModule = (module) => { setSelectedModule(module); setShowModuleModal(true); };
   const handleDeleteModule = (module) => {
-    Alert.alert(
-      'Delete Module',
-      `Are you sure you want to delete ${module.moduleName}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            await deleteModule(module.id);
-            await loadData();
-            setSelectedModule(null);
-          },
-        },
-      ]
-    );
+    Alert.alert('Delete Module', `Delete "${module.moduleName}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => { await deleteModule(module.id); await loadData(); } },
+    ]);
   };
+  const handleAddAssessment = (module) => { setSelectedModule(module); setSelectedAssessment(null); setShowAssessmentModal(true); };
 
-  const handleAddAssessment = (module) => {
-    setSelectedModule(module);
-    setSelectedAssessment(null);
-    setShowAssessmentModal(true);
-  };
-
-  const renderModuleCard = (module, index) => (
-    <Animated.View
-      key={module.id}
-      entering={FadeInRight.delay(200 + index * 100).springify()}
-      style={styles.moduleCard}
-    >
-      <BlurView intensity={30} tint="light" style={styles.moduleCardBlur}>
-        {/* Module Header */}
-        <View style={styles.moduleHeader}>
-          <View style={styles.moduleHeaderLeft}>
-            <LinearGradient
-              colors={[module.color, module.color + '80']}
-              style={styles.moduleIcon}
-            >
-              <BookOpen size={20} color="#FFFFFF" />
+  if (modules.length === 0) {
+    return (
+      <LinearGradient colors={[COLORS.bgStart, COLORS.bgMid, COLORS.bgEnd]} style={styles.container}>
+        <View style={styles.emptyContainer}>
+          <View style={styles.emptyGlow} />
+          <View style={styles.emptyIcon}><GraduationCap size={48} color={COLORS.primary} /></View>
+          <Text style={styles.emptyTitle}>Course Tracker</Text>
+          <Text style={styles.emptySubtitle}>Add modules to visualize your academic journey with rich analytics</Text>
+          <TouchableOpacity style={styles.emptyBtn} onPress={() => { setSelectedModule(null); setShowModuleModal(true); }} activeOpacity={0.8}>
+            <LinearGradient colors={[COLORS.primary, COLORS.primaryDark]} style={styles.emptyBtnGrad}>
+              <Plus size={20} color={COLORS.white} />
+              <Text style={styles.emptyBtnText}>Add Module</Text>
             </LinearGradient>
-            <View style={styles.moduleHeaderInfo}>
-              <Text style={styles.moduleTitle}>{module.moduleName}</Text>
-              <Text style={styles.moduleCode}>{module.moduleCode}</Text>
-            </View>
-          </View>
-          <View style={[
-            styles.moduleGrade,
-            { backgroundColor: getGradeColor(module.currentGrade) + '20' }
-          ]}>
-            <Text style={[
-              styles.moduleGradeText,
-              { color: getGradeColor(module.currentGrade) }
-            ]}>
-              {module.currentGrade}
-            </Text>
-          </View>
-        </View>
-
-        {/* Module Info Grid */}
-        <View style={styles.infoGrid}>
-          <View style={styles.infoItem}>
-            <Award size={16} color={COLORS.primary} />
-            <Text style={styles.infoLabel}>Credits</Text>
-            <Text style={styles.infoValue}>{module.credits}</Text>
-          </View>
-          <View style={styles.infoItem}>
-            <Target size={16} color={COLORS.secondary} />
-            <Text style={styles.infoLabel}>Target</Text>
-            <Text style={styles.infoValue}>{module.targetGrade}</Text>
-          </View>
-          <View style={styles.infoItem}>
-            <FileText size={16} color={COLORS.warning} />
-            <Text style={styles.infoLabel}>Assignments</Text>
-            <Text style={styles.infoValue}>{(module.assignments || []).length}</Text>
-          </View>
-          <View style={styles.infoItem}>
-            <Calendar size={16} color={COLORS.success} />
-            <Text style={styles.infoLabel}>Assessments</Text>
-            <Text style={styles.infoValue}>{(module.assessments || []).length}</Text>
-          </View>
-        </View>
-
-        {/* Progress Section */}
-        <View style={styles.progressSection}>
-          <Text style={styles.progressTitle}>Assignment Progress</Text>
-          <View style={styles.progressBar}>
-            <View
-              style={[
-                styles.progressFill,
-                {
-                  width: `${((module.assignments || []).filter(a => a.status === 'completed').length / 
-                    Math.max((module.assignments || []).length, 1)) * 100}%`,
-                  backgroundColor: module.color,
-                },
-              ]}
-            />
-          </View>
-          <Text style={styles.progressText}>
-            {((module.assignments || []).filter(a => a.status === 'completed').length)}/
-            {(module.assignments || []).length} completed
-          </Text>
-        </View>
-
-        {/* Assessments Section */}
-        {(module.assessments || []).length > 0 && (
-          <View style={styles.assessmentsSection}>
-            <Text style={styles.sectionTitle}>Assessments</Text>
-            {(module.assessments || []).map((assessment, idx) => (
-              <View key={assessment.id || idx} style={styles.assessmentItem}>
-                <View style={styles.assessmentHeader}>
-                  <View style={styles.assessmentType}>
-                    <Calendar size={14} color={module.color} />
-                    <Text style={styles.assessmentTypeText}>{assessment.type}</Text>
-                  </View>
-                  <View style={[
-                    styles.priorityBadge,
-                    { backgroundColor: 
-                      assessment.priority === 'high' ? COLORS.danger + '20' :
-                      assessment.priority === 'medium' ? COLORS.warning + '20' :
-                      COLORS.success + '20'
-                    }
-                  ]}>
-                    <Flag size={10} color={
-                      assessment.priority === 'high' ? COLORS.danger :
-                      assessment.priority === 'medium' ? COLORS.warning :
-                      COLORS.success
-                    } />
-                  </View>
-                </View>
-                <Text style={styles.assessmentTitle}>{assessment.title}</Text>
-                <Text style={styles.assessmentDate}>
-                  {new Date(assessment.date).toLocaleDateString('en-US', {
-                    month: 'long',
-                    day: 'numeric',
-                    year: 'numeric',
-                  })}
-                </Text>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* Actions */}
-        <View style={styles.actionsContainer}>
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: COLORS.primary + '10' }]}
-            onPress={() => handleEditModule(module)}
-          >
-            <Edit3 size={16} color={COLORS.primary} />
-            <Text style={[styles.actionText, { color: COLORS.primary }]}>Edit</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: COLORS.secondary + '10' }]}
-            onPress={() => handleAddAssessment(module)}
-          >
-            <Plus size={16} color={COLORS.secondary} />
-            <Text style={[styles.actionText, { color: COLORS.secondary }]}>Assessment</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: COLORS.danger + '10' }]}
-            onPress={() => handleDeleteModule(module)}
-          >
-            <Text style={[styles.actionText, { color: COLORS.danger }]}>Delete</Text>
           </TouchableOpacity>
         </View>
-      </BlurView>
-    </Animated.View>
-  );
+        <ModuleModal visible={showModuleModal} module={selectedModule} onClose={() => { setShowModuleModal(false); loadData(); }} />
+        <AssessmentModal visible={showAssessmentModal} module={selectedModule} assessment={selectedAssessment} onClose={() => { setShowAssessmentModal(false); loadData(); }} />
+      </LinearGradient>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      <Animated.View entering={FadeInDown.springify()} style={styles.header}>
-        <Text style={styles.title}>Course Details</Text>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => {
-            setSelectedModule(null);
-            setShowModuleModal(true);
-          }}
-        >
-          <LinearGradient
-            colors={COLORS.gradient1}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.addButtonGradient}
-          >
-            <Plus size={22} color="#FFFFFF" />
+    <LinearGradient colors={[COLORS.bgStart, COLORS.bgMid, COLORS.bgEnd]} style={styles.container}>
+      {/* Premium Header */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.headerTitle}>Course Details</Text>
+          <View style={styles.headerBadge}>
+            <Layers size={10} color={COLORS.primary} />
+            <Text style={styles.headerBadgeText}>{modules.length} Active</Text>
+          </View>
+        </View>
+        <TouchableOpacity style={styles.addBtn} onPress={() => { setSelectedModule(null); setShowModuleModal(true); }} activeOpacity={0.8}>
+          <LinearGradient colors={[COLORS.primary, COLORS.primaryDark]} style={styles.addBtnGrad}>
+            <Plus size={20} color={COLORS.white} />
           </LinearGradient>
         </TouchableOpacity>
-      </Animated.View>
+      </View>
 
-      <ScrollView
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {modules.length === 0 ? (
-          <Animated.View entering={FadeInDown.delay(300)} style={styles.emptyState}>
-            <GraduationCap size={48} color={COLORS.textMuted} />
-            <Text style={styles.emptyTitle}>No modules yet</Text>
-            <Text style={styles.emptySubtitle}>
-              Add your first module to see course details
-            </Text>
-          </Animated.View>
-        ) : (
-          modules.map((module, index) => renderModuleCard(module, index))
-        )}
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        {/* 3D Book Hero */}
+        <View style={styles.canvasContainer}>
+          {isFocused && (
+            <Canvas dpr={1} gl={{ antialias: true, alpha: true }} camera={{ position: [0, 0, 2.5], fov: 55 }} style={{ flex: 1 }}>
+              <Suspense fallback={null}>
+                <BookModel />
+              </Suspense>
+            </Canvas>
+          )}
+          <BlurView intensity={20} tint="dark" style={styles.canvasOverlay}>
+            <BookOpen size={16} color={COLORS.white} />
+            <Text style={styles.canvasOverlayText}>Course Overview</Text>
+            <View style={styles.canvasDot} />
+            <Text style={styles.canvasOverlayCount}>{modules.length} modules</Text>
+          </BlurView>
+        </View>
 
-        <View style={{ height: 120 }} />
+        {/* Module Cards */}
+        {modules.map((module, index) => {
+          const done = (module.assignments || []).filter(a => a.status === 'completed').length;
+          const total = (module.assignments || []).length;
+          const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+          const assessments = (module.assessments || []).length;
+
+          return (
+            <Animated.View key={module.id} entering={FadeInUp.delay(index * 100).springify()} style={styles.card}>
+              {/* Card Header with Gradient Accent */}
+              <View style={styles.cardAccent}>
+                <LinearGradient colors={[module.color, module.color + '40']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.accentBar} />
+              </View>
+
+              {/* Module Header */}
+              <View style={styles.cardTop}>
+                <View style={styles.cardTopLeft}>
+                  <LinearGradient colors={[module.color, module.color + '60']} style={styles.moduleIcon}>
+                    <BookOpen size={20} color={COLORS.white} />
+                  </LinearGradient>
+                  <View>
+                    <Text style={styles.moduleName}>{module.moduleName}</Text>
+                    <Text style={styles.moduleCode}>{module.moduleCode}</Text>
+                  </View>
+                </View>
+                <TouchableOpacity onPress={() => handleEditModule(module)}>
+                  <View style={[styles.gradePill, { backgroundColor: getGradeColor(module.currentGrade) + '15', borderColor: getGradeColor(module.currentGrade) + '30' }]}>
+                    <Text style={[styles.gradePillText, { color: getGradeColor(module.currentGrade) }]}>{module.currentGrade || 'N/A'}</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+
+              {/* Stats Grid with Rings */}
+              <View style={styles.statsGrid}>
+                <View style={styles.statCard}>
+                  <ProgressRing progress={(module.credits / 20) * 100} size={44} strokeWidth={3} color={module.color} />
+                  <View style={styles.statCardText}>
+                    <Text style={styles.statValue}>{module.credits}</Text>
+                    <Text style={styles.statLabel}>Credits</Text>
+                  </View>
+                </View>
+                <View style={styles.statCard}>
+                  <Target size={18} color={COLORS.accent} />
+                  <View style={styles.statCardText}>
+                    <Text style={styles.statValue}>{module.targetGrade}</Text>
+                    <Text style={styles.statLabel}>Target</Text>
+                  </View>
+                </View>
+                <View style={styles.statCard}>
+                  <ProgressRing progress={pct} size={44} strokeWidth={3} color={COLORS.success} />
+                  <View style={styles.statCardText}>
+                    <Text style={styles.statValue}>{pct}%</Text>
+                    <Text style={styles.statLabel}>Done</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Progress Bar */}
+              <View style={styles.progressSection}>
+                <View style={styles.progressHeader}>
+                  <Text style={styles.progressTitle}>Assignment Progress</Text>
+                  <Text style={styles.progressPercent}>{done}/{total}</Text>
+                </View>
+                <View style={styles.progressBar}>
+                  <View style={[styles.progressFill, { width: `${pct}%`, backgroundColor: module.color }]} />
+                </View>
+              </View>
+
+              {/* Assessments Section */}
+              {assessments > 0 && (
+                <View style={styles.assessmentsSection}>
+                  <View style={styles.sectionHeader}>
+                    <Calendar size={14} color={COLORS.primary} />
+                    <Text style={styles.sectionTitle}>Upcoming Assessments</Text>
+                    <View style={styles.sectionBadge}><Text style={styles.sectionBadgeText}>{assessments}</Text></View>
+                  </View>
+                  {(module.assessments || []).slice(0, 3).map((a, idx) => (
+                    <View key={a.id || idx} style={styles.assessmentItem}>
+                      <View style={[styles.assessmentDot, { backgroundColor: a.priority === 'high' ? COLORS.danger : a.priority === 'medium' ? COLORS.warning : COLORS.success }]} />
+                      <View style={styles.assessmentInfo}>
+                        <Text style={styles.assessmentTitle} numberOfLines={1}>{a.title}</Text>
+                        <Text style={styles.assessmentMeta}>{a.type} • {new Date(a.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</Text>
+                      </View>
+                      <Flag size={12} color={a.priority === 'high' ? COLORS.danger : a.priority === 'medium' ? COLORS.warning : COLORS.success} />
+                    </View>
+                  ))}
+                  {assessments > 3 && (
+                    <TouchableOpacity onPress={() => handleAddAssessment(module)}>
+                      <Text style={styles.viewMore}>+{assessments - 3} more assessments</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+
+              {/* Actions */}
+              <View style={styles.actionsRow}>
+                <TouchableOpacity style={styles.actionBtn} onPress={() => handleEditModule(module)}>
+                  <Edit3 size={14} color={COLORS.primary} />
+                  <Text style={[styles.actionText, { color: COLORS.primary }]}>Edit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: COLORS.accent + '10' }]} onPress={() => handleAddAssessment(module)}>
+                  <Plus size={14} color={COLORS.accent} />
+                  <Text style={[styles.actionText, { color: COLORS.accent }]}>Exam</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: COLORS.danger + '08' }]} onPress={() => handleDeleteModule(module)}>
+                  <Trash2 size={14} color={COLORS.danger} />
+                  <Text style={[styles.actionText, { color: COLORS.danger }]}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            </Animated.View>
+          );
+        })}
+
+        <View style={{ height: 100 }} />
       </ScrollView>
 
-      <ModuleModal
-        visible={showModuleModal}
-        module={selectedModule}
-        onClose={() => {
-          setShowModuleModal(false);
-          loadData();
-        }}
-      />
-      <AssessmentModal
-        visible={showAssessmentModal}
-        module={selectedModule}
-        assessment={selectedAssessment}
-        onClose={() => {
-          setShowAssessmentModal(false);
-          loadData();
-        }}
-      />
-    </View>
+      <ModuleModal visible={showModuleModal} module={selectedModule} onClose={() => { setShowModuleModal(false); loadData(); }} />
+      <AssessmentModal visible={showAssessmentModal} module={selectedModule} assessment={selectedAssessment} onClose={() => { setShowAssessmentModal(false); loadData(); }} />
+    </LinearGradient>
   );
 };
 
+// ============================================================
+// STYLES
+// ============================================================
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.bg,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: CARD_PADDING,
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 20,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: COLORS.text,
-  },
-  addButton: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  addButtonGradient: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 16,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: CARD_PADDING,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 80,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginTop: 16,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    marginTop: 8,
-  },
-  moduleCard: {
-    borderRadius: 24,
-    overflow: 'hidden',
-    marginBottom: 16,
-  },
-  moduleCardBlur: {
-    padding: 20,
-    backgroundColor: COLORS.surfaceGlass,
-    borderWidth: 1,
-    borderColor: COLORS.borderLight,
-  },
-  moduleHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  moduleHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: 12,
-  },
-  moduleIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  moduleHeaderInfo: {
-    flex: 1,
-  },
-  moduleTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginBottom: 2,
-  },
-  moduleCode: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-  },
-  moduleGrade: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
-  },
-  moduleGradeText: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  infoGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 20,
-  },
-  infoItem: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    padding: 12,
-    alignItems: 'center',
-  },
-  infoLabel: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    marginTop: 4,
-  },
-  infoValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginTop: 2,
-  },
-  progressSection: {
-    marginBottom: 20,
-  },
-  progressTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-    marginBottom: 8,
-  },
-  progressBar: {
-    height: 8,
-    backgroundColor: COLORS.borderLight,
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 4,
-  },
-  progressText: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-  },
-  assessmentsSection: {
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginBottom: 12,
-  },
-  assessmentItem: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: COLORS.primary,
-  },
-  assessmentHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  assessmentType: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  assessmentTypeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-    textTransform: 'capitalize',
-  },
-  priorityBadge: {
-    padding: 4,
-    borderRadius: 6,
-  },
-  assessmentTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: 4,
-  },
-  assessmentDate: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-  },
-  actionsContainer: {
-    flexDirection: 'row',
-    gap: 8,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.borderLight,
-    paddingTop: 16,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  actionText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
+  container: { flex: 1 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: PADDING, paddingTop: Platform.OS === 'ios' ? 54 : 36, paddingBottom: 10 },
+  headerTitle: { fontSize: 26, fontFamily: 'JosefinSans-Bold', color: COLORS.text, letterSpacing: -0.5 },
+  headerBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
+  headerBadgeText: { fontSize: 11, fontFamily: 'JosefinSans-Bold', color: COLORS.textSecondary },
+  addBtn: { borderRadius: 16, overflow: 'hidden', shadowColor: COLORS.primaryDark, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.24, shadowRadius: 10, elevation: 4 },
+  addBtnGrad: { width: 42, height: 42, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
+  scrollView: { flex: 1 },
+  scrollContent: { paddingHorizontal: PADDING, paddingBottom: 16 },
+
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
+  emptyGlow: { position: 'absolute', width: 200, height: 200, borderRadius: 100, backgroundColor: COLORS.accent + '10', top: '30%' },
+  emptyIcon: { width: 96, height: 96, borderRadius: 28, backgroundColor: COLORS.surfaceGlass, borderWidth: 1.2, borderColor: COLORS.surfaceGlassBorder, justifyContent: 'center', alignItems: 'center', marginBottom: 24, shadowColor: COLORS.border, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.18, shadowRadius: 18, elevation: 4 },
+  emptyTitle: { fontSize: 22, fontFamily: 'JosefinSans-Bold', color: COLORS.text, marginBottom: 8 },
+  emptySubtitle: { fontSize: 14, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 28 },
+  emptyBtn: { borderRadius: 20, overflow: 'hidden', shadowColor: COLORS.primaryDark, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.28, shadowRadius: 16, elevation: 6 },
+  emptyBtnGrad: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 28, paddingVertical: 16 },
+  emptyBtnText: { fontSize: 16, fontFamily: 'JosefinSans-Bold', color: COLORS.white },
+
+  canvasContainer: { height: 170, borderRadius: 20, overflow: 'hidden', marginBottom: 16, backgroundColor: COLORS.slate, position: 'relative' },
+  canvasOverlay: { position: 'absolute', bottom: 12, left: 12, right: 12, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(0,0,0,0.35)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, overflow: 'hidden' },
+  canvasOverlayText: { fontSize: 12, fontFamily: 'JosefinSans-Bold', color: COLORS.white, flex: 1 },
+  canvasDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: COLORS.success },
+  canvasOverlayCount: { fontSize: 12, fontFamily: 'JosefinSans-Bold', color: 'rgba(255,255,255,0.8)' },
+
+  card: { backgroundColor: COLORS.surfaceGlass, borderRadius: 20, borderWidth: 1.2, borderColor: COLORS.surfaceGlassBorder, marginBottom: 14, overflow: 'hidden', shadowColor: COLORS.border, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 14, elevation: 3 },
+  cardAccent: { height: 3 },
+  accentBar: { flex: 1 },
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, paddingBottom: 12 },
+  cardTopLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  moduleIcon: { width: 42, height: 42, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  moduleName: { fontSize: 15, fontFamily: 'JosefinSans-Bold', color: COLORS.text, marginBottom: 2 },
+  moduleCode: { fontSize: 11, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textMuted },
+  gradePill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1 },
+  gradePillText: { fontSize: 13, fontFamily: 'JosefinSans-Bold' },
+
+  statsGrid: { flexDirection: 'row', paddingHorizontal: 16, gap: 8, marginBottom: 14 },
+  statCard: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: COLORS.white, borderRadius: 12, padding: 10 },
+  statCardText: { gap: 1 },
+  statValue: { fontSize: 14, fontFamily: 'JosefinSans-Bold', color: COLORS.text },
+  statLabel: { fontSize: 9, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+
+  progressSection: { paddingHorizontal: 16, marginBottom: 14 },
+  progressHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  progressTitle: { fontSize: 12, fontFamily: 'JosefinSans-Bold', color: COLORS.textSecondary },
+  progressPercent: { fontSize: 12, fontFamily: 'JosefinSans-Bold', color: COLORS.text },
+  progressBar: { height: 6, backgroundColor: COLORS.border, borderRadius: 3, overflow: 'hidden' },
+  progressFill: { height: '100%', borderRadius: 3 },
+
+  assessmentsSection: { paddingHorizontal: 16, marginBottom: 14 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  sectionTitle: { flex: 1, fontSize: 13, fontFamily: 'JosefinSans-Bold', color: COLORS.text },
+  sectionBadge: { backgroundColor: COLORS.primary + '15', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
+  sectionBadgeText: { fontSize: 10, fontFamily: 'JosefinSans-Bold', color: COLORS.primary },
+  assessmentItem: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  assessmentDot: { width: 6, height: 6, borderRadius: 3 },
+  assessmentInfo: { flex: 1 },
+  assessmentTitle: { fontSize: 12, fontFamily: 'JosefinSans-Bold', color: COLORS.text, marginBottom: 1 },
+  assessmentMeta: { fontSize: 10, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textMuted, textTransform: 'capitalize' },
+  viewMore: { fontSize: 11, fontFamily: 'JosefinSans-Bold', color: COLORS.accent, marginTop: 8, textAlign: 'center' },
+
+  actionsRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: COLORS.border, paddingBottom: 16 },
+  actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 10, borderRadius: 12, backgroundColor: COLORS.primary + '06' },
+  actionText: { fontSize: 12, fontFamily: 'JosefinSans-Bold' },
 });
 
 export default CourseDetailsScreen;
