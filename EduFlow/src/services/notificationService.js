@@ -5,30 +5,18 @@ import * as Device from 'expo-device';
 import { Platform, Alert } from 'react-native';
 import Constants from 'expo-constants';
 
-// Check if running in Expo Go
 const isExpoGo = Constants.appOwnership === 'expo';
 
-// Configure notification handler for foreground messages
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
     shouldPlaySound: true,
-    shouldSetBadge: false, // Set to false to avoid badge issues in Expo Go
+    shouldSetBadge: true,
+    shouldVibrate: true,
   }),
 });
 
-// ============ HELPER FUNCTIONS ============
-
-/**
- * Request notification permissions
- */
 export async function requestNotificationPermissions() {
-  // Allow permission request even in Expo Go for local notifications
-  if (!Device.isDevice && Platform.OS === 'android') {
-    console.log('Running on Android emulator - notifications may be limited');
-    // Still try to request permissions on emulator
-  }
-
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
 
@@ -38,345 +26,432 @@ export async function requestNotificationPermissions() {
   }
 
   if (finalStatus !== 'granted') {
-    console.log('Notification permissions not granted');
-    if (isExpoGo) {
-      console.log('Note: Expo Go has limited notification support');
-    }
+    console.log('[Notifications] Permission denied');
     return false;
   }
 
   return true;
 }
 
-/**
- * Schedule a payday reminder notification (Local Only)
- * @param {number} daysUntilPayday - Days until payday (1-5)
- * @param {number} remainingBudget - Remaining budget in Rands
- * @param {string} topCategory - The top spending category
- */
-export async function schedulePaydayReminder(daysUntilPayday, remainingBudget, topCategory = null) {
-  if (daysUntilPayday < 1 || daysUntilPayday > 5) {
-    console.log('Only scheduling reminders for 1-5 days before payday');
-    return null;
-  }
-
-  try {
-    // Cancel existing notifications for this day to avoid duplicates
-    await cancelPaydayReminder(daysUntilPayday);
-
-    const dailyAllowance = Math.floor(remainingBudget / daysUntilPayday);
-    
-    let title = '';
-    let body = '';
-    
-    switch (daysUntilPayday) {
-      case 5:
-        title = '💰 5 Days Until Payday!';
-        body = `You have ${formatMoney(remainingBudget)} left — make it count!`;
-        break;
-      case 4:
-        title = '📊 Budget Check';
-        body = `${formatMoney(remainingBudget)} to last 4 more days. That's ${formatMoney(dailyAllowance)}/day.`;
-        break;
-      case 3:
-        title = '🏁 Almost There!';
-        if (topCategory) {
-          body = `${formatMoney(remainingBudget)} left. Your top spend this month was ${topCategory}.`;
-        } else {
-          body = `${formatMoney(remainingBudget)} left — you've got this!`;
-        }
-        break;
-      case 2:
-        title = '⚡ 2 Days to Go!';
-        body = `You have ${formatMoney(remainingBudget)} remaining. Spend wisely!`;
-        break;
-      case 1:
-        title = '🎉 Payday Tomorrow!';
-        body = `Your allowance arrives tomorrow! Last day with ${formatMoney(remainingBudget)} left.`;
-        break;
-      default:
-        title = '💰 Payday Reminder';
-        body = `${daysUntilPayday} days until payday. You have ${formatMoney(remainingBudget)} remaining.`;
-    }
-
-    // Calculate trigger date
-    const triggerDate = new Date();
-    triggerDate.setDate(triggerDate.getDate() + daysUntilPayday);
-    triggerDate.setHours(9, 0, 0, 0); // 9 AM notification
-
-    // Schedule the notification
-    const notificationId = await Notifications.scheduleNotificationAsync({
-      content: {
-        title,
-        body,
-        data: { 
-          type: 'payday_reminder', 
-          daysUntilPayday,
-          remainingBudget,
-        },
-        sound: true,
-        priority: Notifications.AndroidNotificationPriority?.HIGH || 'high',
-      },
-      trigger: {
-        date: triggerDate,
-        channelId: 'payday-reminders', // Add channel ID for Android
-      },
+export async function createNotificationChannels() {
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('academic-alerts', {
+      name: 'Academic Alerts',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#475569',
+      sound: 'default',
     });
 
-    console.log(`✅ Scheduled payday reminder for ${daysUntilPayday} days from now (${triggerDate.toLocaleDateString()})`);
-    
-    if (isExpoGo) {
-      console.log('⚠️ Note: Running in Expo Go - notifications may have limitations');
-    }
-    
-    return notificationId;
-  } catch (error) {
-    console.error('Failed to schedule notification:', error);
-    return null;
+    await Notifications.setNotificationChannelAsync('assignment-reminders', {
+      name: 'Assignment Reminders',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#3B82F6',
+      sound: 'default',
+    });
+
+    await Notifications.setNotificationChannelAsync('gpa-alerts', {
+      name: 'GPA Alerts',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#DC2626',
+      sound: 'default',
+    });
+
+    await Notifications.setNotificationChannelAsync('general', {
+      name: 'General',
+      importance: Notifications.AndroidImportance.DEFAULT,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#6366F1',
+      sound: 'default',
+    });
   }
 }
 
-/**
- * Schedule all payday reminders for a given payday date
- * @param {number} paydayDay - Day of month (1-31)
- * @param {number} remainingBudget - Current remaining budget
- * @param {string} topCategory - Top spending category
- */
-export async function scheduleAllPaydayReminders(paydayDay, remainingBudget, topCategory = null) {
-  try {
-    // Cancel all existing payday reminders first
-    await cancelAllPaydayReminders();
-    
-    const today = new Date();
-    const currentDay = today.getDate();
-    const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-    
-    let daysUntilPayday;
-    if (currentDay <= paydayDay) {
-      daysUntilPayday = paydayDay - currentDay;
-    } else {
-      daysUntilPayday = (daysInMonth - currentDay) + paydayDay;
-    }
-    
-    console.log(`Payday is in ${daysUntilPayday} days`);
-    
-    // Schedule reminders for the current month's payday
-    if (daysUntilPayday <= 5 && daysUntilPayday > 0) {
-      await schedulePaydayReminder(daysUntilPayday, remainingBudget, topCategory);
-    }
-    
-    return true;
-  } catch (error) {
-    console.error('Failed to schedule payday reminders:', error);
-    return false;
-  }
-}
+const buildNotificationContent = (title, body, data = {}, channelType = 'general') => ({
+  title,
+  body,
+  data: { ...data },
+  sound: 'default',
+  badge: 1,
+  ...(Platform.OS === 'android' && { channelId: channelType }),
+  ...(Platform.OS === 'ios' && {
+    _displayInForeground: true,
+    interruptionLevel: 'time-sensitive',
+  }),
+});
 
-/**
- * Cancel a specific payday reminder
- */
-export async function cancelPaydayReminder(daysUntilPayday) {
-  try {
-    const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
-    
-    for (const notification of scheduledNotifications) {
-      if (notification.content.data?.type === 'payday_reminder' && 
-          notification.content.data?.daysUntilPayday === daysUntilPayday) {
-        await Notifications.cancelScheduledNotificationAsync(notification.identifier);
-        console.log(`Cancelled reminder for ${daysUntilPayday} days before payday`);
-      }
-    }
-  } catch (error) {
-    console.error('Failed to cancel reminder:', error);
-  }
-}
-
-/**
- * Cancel all payday reminders
- */
-export async function cancelAllPaydayReminders() {
-  try {
-    const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
-    
-    for (const notification of scheduledNotifications) {
-      if (notification.content.data?.type === 'payday_reminder' || 
-          notification.content.data?.type === 'payday_planning') {
-        await Notifications.cancelScheduledNotificationAsync(notification.identifier);
-      }
-    }
-    
-    console.log('Cancelled all payday reminders');
-  } catch (error) {
-    console.error('Failed to cancel reminders:', error);
-  }
-}
-
-/**
- * Send a test notification immediately
- */
-export async function sendTestNotification() {
+export async function scheduleAssignmentReminder(assignmentTitle, dueDate, moduleName) {
   try {
     const hasPermission = await requestNotificationPermissions();
-    if (!hasPermission) {
-      Alert.alert('Permission Required', 'Please enable notifications to receive test alerts.');
-      return false;
-    }
-    
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: '🔔 Test Notification',
-        body: isExpoGo 
-          ? 'Your payday reminder system is working! (Local notification in Expo Go)'
-          : 'Your payday reminder system is working!',
-        data: { type: 'test' },
-        sound: true,
+    if (!hasPermission) return null;
+
+    const triggerDate = new Date(dueDate);
+    triggerDate.setHours(triggerDate.getHours() - 24);
+
+    if (triggerDate <= new Date()) return null;
+
+    const identifier = await Notifications.scheduleNotificationAsync({
+      content: buildNotificationContent(
+        'Assignment Due Tomorrow',
+        `${assignmentTitle} for ${moduleName} is due tomorrow.`,
+        { type: 'assignment_reminder', moduleName, assignmentTitle },
+        'assignment-reminders'
+      ),
+      trigger: {
+        type: 'date',
+        date: triggerDate,
+        ...(Platform.OS === 'android' && { channelId: 'assignment-reminders' }),
       },
-      trigger: null, // Send immediately
     });
-    
-    console.log('Test notification sent');
-    
-    if (isExpoGo) {
-      Alert.alert(
-        'Test Sent',
-        'Check your notifications. Note: Expo Go has limited notification support. For full features, use a development build.'
-      );
-    } else {
-      Alert.alert('Test Sent', 'Check your notification panel!');
-    }
-    
+
+    console.log('[Notifications] Assignment reminder scheduled');
+    return identifier;
+  } catch (error) {
+    console.error('[Notifications] Assignment error:', error);
+    return null;
+  }
+}
+
+export async function scheduleExamReminder(assessmentTitle, examDate, moduleName) {
+  try {
+    const hasPermission = await requestNotificationPermissions();
+    if (!hasPermission) return null;
+
+    const triggerDate = new Date(examDate);
+    triggerDate.setDate(triggerDate.getDate() - 3);
+
+    if (triggerDate <= new Date()) return null;
+
+    const identifier = await Notifications.scheduleNotificationAsync({
+      content: buildNotificationContent(
+        'Upcoming Exam',
+        `${assessmentTitle} for ${moduleName} is in 3 days.`,
+        { type: 'exam_reminder', moduleName, assessmentTitle },
+        'academic-alerts'
+      ),
+      trigger: {
+        type: 'date',
+        date: triggerDate,
+        ...(Platform.OS === 'android' && { channelId: 'academic-alerts' }),
+      },
+    });
+
+    console.log('[Notifications] Exam reminder scheduled');
+    return identifier;
+  } catch (error) {
+    console.error('[Notifications] Exam error:', error);
+    return null;
+  }
+}
+
+export async function scheduleExamDayReminder(assessmentTitle, examDate, moduleName) {
+  try {
+    const hasPermission = await requestNotificationPermissions();
+    if (!hasPermission) return null;
+
+    const triggerDate = new Date(examDate);
+    triggerDate.setDate(triggerDate.getDate() - 1);
+    triggerDate.setHours(7, 0, 0, 0);
+
+    if (triggerDate <= new Date()) return null;
+
+    const identifier = await Notifications.scheduleNotificationAsync({
+      content: buildNotificationContent(
+        'Exam Tomorrow',
+        `${assessmentTitle} for ${moduleName} is tomorrow.`,
+        { type: 'exam_reminder', moduleName, assessmentTitle },
+        'academic-alerts'
+      ),
+      trigger: {
+        type: 'date',
+        date: triggerDate,
+        ...(Platform.OS === 'android' && { channelId: 'academic-alerts' }),
+      },
+    });
+
+    console.log('[Notifications] Exam day reminder scheduled');
+    return identifier;
+  } catch (error) {
+    console.error('[Notifications] Exam day error:', error);
+    return null;
+  }
+}
+
+export async function sendGPAAlert(currentGPA, targetGPA, moduleName) {
+  try {
+    const hasPermission = await requestNotificationPermissions();
+    if (!hasPermission || currentGPA >= targetGPA) return null;
+
+    await Notifications.scheduleNotificationAsync({
+      content: buildNotificationContent(
+        'GPA Alert',
+        moduleName
+          ? `${moduleName} grade dropped. GPA (${currentGPA.toFixed(1)}) below target (${targetGPA.toFixed(1)}).`
+          : `GPA (${currentGPA.toFixed(1)}) below target (${targetGPA.toFixed(1)}).`,
+        { type: 'gpa_alert', currentGPA, targetGPA, moduleName },
+        'gpa-alerts'
+      ),
+      trigger: { type: 'date', date: new Date() },
+    });
+
+    console.log('[Notifications] GPA alert sent');
     return true;
   } catch (error) {
-    console.error('Failed to send test notification:', error);
-    Alert.alert('Error', 'Failed to send test notification. Please check your notification settings.');
+    console.error('[Notifications] GPA alert error:', error);
     return false;
   }
 }
 
-/**
- * Get all scheduled notifications (for debugging)
- */
+export async function sendGradeUpdateNotification(moduleName, oldGrade, newGrade) {
+  try {
+    const hasPermission = await requestNotificationPermissions();
+    if (!hasPermission || oldGrade === newGrade) return null;
+
+    const improved = getGradeValue(newGrade) > getGradeValue(oldGrade);
+
+    await Notifications.scheduleNotificationAsync({
+      content: buildNotificationContent(
+        improved ? 'Grade Improved' : 'Grade Updated',
+        `${moduleName}: ${oldGrade} -> ${newGrade}`,
+        { type: 'grade_update', moduleName, oldGrade, newGrade },
+        'academic-alerts'
+      ),
+      trigger: { type: 'date', date: new Date() },
+    });
+
+    console.log('[Notifications] Grade update sent');
+    return true;
+  } catch (error) {
+    console.error('[Notifications] Grade update error:', error);
+    return false;
+  }
+}
+
+export async function sendOverdueNotification(assignmentTitle, moduleName, daysOverdue) {
+  try {
+    const hasPermission = await requestNotificationPermissions();
+    if (!hasPermission) return null;
+
+    await Notifications.scheduleNotificationAsync({
+      content: buildNotificationContent(
+        'Assignment Overdue',
+        `${assignmentTitle} for ${moduleName} is ${daysOverdue} day${daysOverdue > 1 ? 's' : ''} overdue.`,
+        { type: 'overdue_alert', moduleName, assignmentTitle, daysOverdue },
+        'assignment-reminders'
+      ),
+      trigger: { type: 'date', date: new Date() },
+    });
+
+    console.log('[Notifications] Overdue sent');
+    return true;
+  } catch (error) {
+    console.error('[Notifications] Overdue error:', error);
+    return false;
+  }
+}
+
+export async function scheduleDailyStudyReminder(hour = 8, minute = 0) {
+  try {
+    const hasPermission = await requestNotificationPermissions();
+    if (!hasPermission) return null;
+
+    await cancelDailyReminders();
+
+    const identifier = await Notifications.scheduleNotificationAsync({
+      content: buildNotificationContent(
+        'Study Time',
+        'Start your day with focused study.',
+        { type: 'daily_study' },
+        'general'
+      ),
+      trigger: {
+        type: 'daily',
+        hour,
+        minute,
+        ...(Platform.OS === 'android' && { channelId: 'general' }),
+      },
+    });
+
+    console.log('[Notifications] Daily study scheduled');
+    return identifier;
+  } catch (error) {
+    console.error('[Notifications] Daily study error:', error);
+    return null;
+  }
+}
+
+export async function scheduleWeeklySummary() {
+  try {
+    const hasPermission = await requestNotificationPermissions();
+    if (!hasPermission) return null;
+
+    await cancelWeeklySummary();
+
+    const identifier = await Notifications.scheduleNotificationAsync({
+      content: buildNotificationContent(
+        'Weekly Summary',
+        'Review your academic progress for this week.',
+        { type: 'weekly_summary' },
+        'general'
+      ),
+      trigger: {
+        type: 'weekly',
+        weekday: 1,
+        hour: 18,
+        minute: 0,
+        ...(Platform.OS === 'android' && { channelId: 'general' }),
+      },
+    });
+
+    console.log('[Notifications] Weekly summary scheduled');
+    return identifier;
+  } catch (error) {
+    console.error('[Notifications] Weekly summary error:', error);
+    return null;
+  }
+}
+
+export async function sendCustomNotification(title, body, data = {}) {
+  try {
+    const hasPermission = await requestNotificationPermissions();
+    if (!hasPermission) return null;
+
+    await Notifications.scheduleNotificationAsync({
+      content: buildNotificationContent(title, body, data, 'general'),
+      trigger: { type: 'date', date: new Date() },
+    });
+
+    console.log('[Notifications] Custom sent');
+    return true;
+  } catch (error) {
+    console.error('[Notifications] Custom error:', error);
+    return false;
+  }
+}
+
+export async function cancelNotification(identifier) {
+  try {
+    if (identifier) await Notifications.cancelScheduledNotificationAsync(identifier);
+  } catch (error) {
+    console.error('[Notifications] Cancel error:', error);
+  }
+}
+
+export async function cancelAllNotifications() {
+  try {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+  } catch (error) {
+    console.error('[Notifications] Cancel all error:', error);
+  }
+}
+
+export async function cancelDailyReminders() {
+  try {
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    for (const n of scheduled) {
+      if (n.content.data?.type === 'daily_study') {
+        await Notifications.cancelScheduledNotificationAsync(n.identifier);
+      }
+    }
+  } catch (error) {
+    console.error('[Notifications] Cancel daily error:', error);
+  }
+}
+
+export async function cancelWeeklySummary() {
+  try {
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    for (const n of scheduled) {
+      if (n.content.data?.type === 'weekly_summary') {
+        await Notifications.cancelScheduledNotificationAsync(n.identifier);
+      }
+    }
+  } catch (error) {
+    console.error('[Notifications] Cancel weekly error:', error);
+  }
+}
+
 export async function getScheduledNotifications() {
   try {
-    const notifications = await Notifications.getAllScheduledNotificationsAsync();
-    console.log('Scheduled notifications:', notifications);
-    return notifications;
+    return await Notifications.getAllScheduledNotificationsAsync();
   } catch (error) {
-    console.error('Failed to get scheduled notifications:', error);
     return [];
   }
 }
 
-/**
- * Update payday reminders when settings change
- * @param {number} newPaydayDay - New payday day of month
- * @param {number} remainingBudget - Current remaining budget
- * @param {string} topCategory - Top spending category
- */
-export async function updatePaydayReminders(newPaydayDay, remainingBudget, topCategory = null) {
+export async function sendTestNotification() {
   try {
-    // Cancel all existing
-    await cancelAllPaydayReminders();
-    
-    // Schedule new ones
-    if (newPaydayDay && newPaydayDay > 0 && newPaydayDay <= 31) {
-      await scheduleAllPaydayReminders(newPaydayDay, remainingBudget, topCategory);
+    const hasPermission = await requestNotificationPermissions();
+    if (!hasPermission) {
+      Alert.alert('Permission Required', 'Enable notifications in Settings.');
+      return false;
     }
-    
+
+    await Notifications.scheduleNotificationAsync({
+      content: buildNotificationContent('Test', 'Notifications working.', { type: 'test' }, 'general'),
+      trigger: { type: 'date', date: new Date() },
+    });
+
     return true;
   } catch (error) {
-    console.error('Failed to update payday reminders:', error);
     return false;
   }
 }
 
-/**
- * Check if we're running in Expo Go
- */
 export function isRunningInExpoGo() {
   return isExpoGo;
 }
 
-/**
- * Format money for notification text
- */
-function formatMoney(amount) {
-  return `R${Math.round(amount || 0).toLocaleString('en-ZA')}`;
+function getGradeValue(grade) {
+  const values = { 'A+': 4.0, 'A': 4.0, 'A-': 3.7, 'B+': 3.3, 'B': 3.0, 'B-': 2.7, 'C+': 2.3, 'C': 2.0, 'C-': 1.7, 'D+': 1.3, 'D': 1.0, 'D-': 0.7, 'F': 0.0 };
+  return values[grade] || 0;
 }
 
-// ============ NOTIFICATION LISTENER SETUP ============
-
-let notificationListener = null;
-let responseListener = null;
-
-/**
- * Initialize notification listeners
- * @param {Function} onNotificationTap - Callback when notification is tapped
- */
-export function initNotificationListeners(onNotificationTap = null) {
-  // This listener is called whenever a notification is received while the app is foregrounded
-  notificationListener = Notifications.addNotificationReceivedListener(notification => {
-    console.log('Notification received:', notification);
-  });
-
-  // This listener is called when a notification is tapped on
-  responseListener = Notifications.addNotificationResponseReceivedListener(response => {
-    const { data } = response.notification.request.content;
-    console.log('Notification tapped:', data);
-    
-    if (onNotificationTap) {
-      onNotificationTap(data);
+export function initNotificationListeners(navigation) {
+  const fg = Notifications.addNotificationReceivedListener(n => console.log('[Notifications] Foreground:', n.request.content.title));
+  const res = Notifications.addNotificationResponseReceivedListener(r => {
+    const data = r.notification.request.content.data;
+    if (navigation) {
+      switch (data?.type) {
+        case 'assignment_reminder':
+        case 'overdue_alert':
+          navigation.navigate('Planner', { screen: 'AssignmentsTab' });
+          break;
+        case 'exam_reminder':
+        case 'grade_update':
+          navigation.navigate('Planner', { screen: 'CoursesTab' });
+          break;
+        case 'gpa_alert':
+          navigation.navigate('Planner', { screen: 'GPATab' });
+          break;
+        default:
+          break;
+      }
     }
   });
-  
-  return () => {
-    removeNotificationListeners();
-  };
+  return () => { fg.remove(); res.remove(); };
 }
 
-/**
- * Remove notification listeners
- */
-export function removeNotificationListeners() {
-  if (notificationListener) {
-    Notifications.removeNotificationSubscription(notificationListener);
-  }
-  if (responseListener) {
-    Notifications.removeNotificationSubscription(responseListener);
-  }
-}
-
-/**
- * Check if notifications are enabled
- */
-export async function areNotificationsEnabled() {
-  try {
-    const settings = await Notifications.getPermissionsAsync();
-    return settings.status === 'granted';
-  } catch (error) {
-    console.error('Failed to check notification permissions:', error);
-    return false;
-  }
-}
-
-/**
- * Create notification channels for Android (Android 8+)
- */
-export async function createNotificationChannels() {
-  if (Platform.OS === 'android') {
-    try {
-      await Notifications.setNotificationChannelAsync('payday-reminders', {
-        name: 'Payday Reminders',
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#34C759',
-        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-        bypassDnd: false,
-      });
-      
-      console.log('Notification channel created');
-    } catch (error) {
-      console.error('Failed to create notification channel:', error);
-    }
-  }
-}
+export default {
+  requestNotificationPermissions,
+  createNotificationChannels,
+  scheduleAssignmentReminder,
+  scheduleExamReminder,
+  scheduleExamDayReminder,
+  sendGPAAlert,
+  sendGradeUpdateNotification,
+  sendOverdueNotification,
+  scheduleDailyStudyReminder,
+  scheduleWeeklySummary,
+  sendCustomNotification,
+  cancelNotification,
+  cancelAllNotifications,
+  cancelDailyReminders,
+  cancelWeeklySummary,
+  getScheduledNotifications,
+  sendTestNotification,
+  isRunningInExpoGo,
+  initNotificationListeners,
+};
