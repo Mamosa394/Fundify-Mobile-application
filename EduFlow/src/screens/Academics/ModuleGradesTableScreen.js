@@ -33,6 +33,19 @@ const GRADE_COLORS = {
   'PP': '#F59E0B', 'F': '#DC2626',
 };
 
+const GRADE_THRESHOLDS = [
+  { min: 85, grade: 'A+', points: 4.0 },
+  { min: 80, grade: 'A', points: 4.0 },
+  { min: 75, grade: 'A-', points: 3.7 },
+  { min: 70, grade: 'B+', points: 3.3 },
+  { min: 65, grade: 'B', points: 3.0 },
+  { min: 60, grade: 'B-', points: 2.7 },
+  { min: 55, grade: 'C+', points: 2.3 },
+  { min: 50, grade: 'C', points: 2.0 },
+  { min: 45, grade: 'PP', points: 0.0 },
+  { min: 0, grade: 'F', points: 0.0 },
+];
+
 const ModuleGradesTableScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const { modules, fetchModules, fetchAnalytics } = useAcademicStore();
@@ -42,6 +55,7 @@ const ModuleGradesTableScreen = ({ navigation }) => {
   }, []);
 
   const loadData = async () => {
+    setLoading(true);
     await Promise.all([fetchModules(), fetchAnalytics()]);
     setLoading(false);
   };
@@ -53,19 +67,56 @@ const ModuleGradesTableScreen = ({ navigation }) => {
     return values[grade] || 0;
   };
 
+  const getGradeFromPoints = (points) => {
+    if (points >= 3.85) return 'A+';
+    if (points >= 3.50) return 'A';
+    if (points >= 3.15) return 'A-';
+    if (points >= 2.85) return 'B+';
+    if (points >= 2.50) return 'B';
+    if (points >= 2.15) return 'B-';
+    if (points >= 1.85) return 'C+';
+    if (points >= 1.50) return 'C';
+    return 'F';
+  };
+
+  // Calculate auto-grade from marks
+  const calculateAutoGrade = (marksObtained, totalMarks) => {
+    if (!marksObtained || !totalMarks || totalMarks === 0) return null;
+    const percentage = (marksObtained / totalMarks) * 100;
+    const threshold = GRADE_THRESHOLDS.find(t => percentage >= t.min);
+    return threshold ? threshold.grade : 'F';
+  };
+
+  // Calculate weighted average from items (assignments + assessments)
   const calculateWeightedAverage = (items) => {
     if (!items || items.length === 0) return null;
-    const graded = items.filter(a => a.gradeObtained && a.gradeObtained !== 'PP' && a.gradeObtained !== 'F');
+    
+    // Use gradeObtained if available, otherwise calculate from marks
+    const graded = items.filter(item => {
+      const grade = item.gradeObtained || calculateAutoGrade(item.marksObtained, item.totalMarks);
+      return grade && grade !== 'PP' && grade !== 'F';
+    });
+    
     if (graded.length === 0) return null;
     
-    const totalWeight = graded.reduce((sum, a) => sum + (a.weightPercentage || 0), 0);
+    const totalWeight = graded.reduce((sum, item) => sum + (item.weightPercentage || 0), 0);
     if (totalWeight === 0) return null;
     
-    const weightedSum = graded.reduce((sum, a) => {
-      return sum + (getGradeValue(a.gradeObtained) * (a.weightPercentage || 0));
+    const weightedSum = graded.reduce((sum, item) => {
+      const grade = item.gradeObtained || calculateAutoGrade(item.marksObtained, item.totalMarks);
+      return sum + (getGradeValue(grade) * (item.weightPercentage || 0));
     }, 0);
     
     return (weightedSum / totalWeight).toFixed(1);
+  };
+
+  // Get display grade for an item
+  const getDisplayGrade = (item) => {
+    if (item.gradeObtained) return item.gradeObtained;
+    if (item.marksObtained && item.totalMarks) {
+      return calculateAutoGrade(item.marksObtained, item.totalMarks) || '-';
+    }
+    return null;
   };
 
   if (loading) {
@@ -90,8 +141,10 @@ const ModuleGradesTableScreen = ({ navigation }) => {
         {modules.map((mod) => {
           const assessments = mod.assessments || [];
           const assignments = mod.assignments || [];
-          const assessmentAvg = calculateWeightedAverage(assessments);
-          const assignmentAvg = calculateWeightedAverage(assignments);
+          
+          // Combine all items for overall average
+          const allItems = [...assignments, ...assessments];
+          const overallAvg = calculateWeightedAverage(allItems);
           
           return (
             <View key={mod.id} style={styles.moduleCard}>
@@ -106,10 +159,10 @@ const ModuleGradesTableScreen = ({ navigation }) => {
                   <Text style={styles.moduleGradeLabel}>Grade</Text>
                   <Text style={[styles.moduleGradeValue, { color: getGradeColor(mod.currentGrade) }]}>{mod.currentGrade || 'N/A'}</Text>
                 </View>
-                {assessmentAvg && (
+                {overallAvg && (
                   <View style={styles.moduleAvg}>
                     <Text style={styles.moduleAvgLabel}>Avg</Text>
-                    <Text style={styles.moduleAvgValue}>{assessmentAvg}</Text>
+                    <Text style={styles.moduleAvgValue}>{overallAvg}</Text>
                   </View>
                 )}
               </View>
@@ -137,28 +190,31 @@ const ModuleGradesTableScreen = ({ navigation }) => {
                     <Text style={[styles.tableHeaderText, styles.colWeight]}>Wt%</Text>
                     <Text style={[styles.tableHeaderText, styles.colGrade]}>Grade</Text>
                   </View>
-                  {assignments.map((a, i) => (
-                    <View key={a.id || i} style={[styles.tableRow, i % 2 === 0 && styles.tableRowAlt]}>
-                      <Text style={[styles.tableCell, styles.colName]} numberOfLines={1}>{a.title || 'Untitled'}</Text>
-                      <View style={[styles.tableCell, styles.colStatus]}>
-                        <View style={[styles.statusDot, { backgroundColor: a.status === 'completed' ? COLORS.success : a.status === 'overdue' ? COLORS.danger : COLORS.warning }]} />
-                        <Text style={styles.statusText}>{a.status || 'pending'}</Text>
+                  {assignments.map((a, i) => {
+                    const displayGrade = getDisplayGrade(a);
+                    return (
+                      <View key={a.id || i} style={[styles.tableRow, i % 2 === 0 && styles.tableRowAlt]}>
+                        <Text style={[styles.tableCell, styles.colName]} numberOfLines={1}>{a.title || 'Untitled'}</Text>
+                        <View style={[styles.tableCell, styles.colStatus]}>
+                          <View style={[styles.statusDot, { backgroundColor: a.status === 'completed' ? COLORS.success : a.status === 'overdue' ? COLORS.danger : COLORS.warning }]} />
+                          <Text style={styles.statusText}>{a.status || 'pending'}</Text>
+                        </View>
+                        <Text style={[styles.tableCell, styles.colMarks]}>
+                          {a.marksObtained != null ? `${a.marksObtained}/${a.totalMarks || 100}` : '-'}
+                        </Text>
+                        <Text style={[styles.tableCell, styles.colWeight]}>{a.weightPercentage || 0}%</Text>
+                        <View style={[styles.tableCell, styles.colGrade]}>
+                          {displayGrade ? (
+                            <View style={[styles.miniBadge, { backgroundColor: getGradeColor(displayGrade) + '20' }]}>
+                              <Text style={[styles.miniBadgeText, { color: getGradeColor(displayGrade) }]}>{displayGrade}</Text>
+                            </View>
+                          ) : (
+                            <Text style={styles.pendingText}>-</Text>
+                          )}
+                        </View>
                       </View>
-                      <Text style={[styles.tableCell, styles.colMarks]}>
-                        {a.marksObtained != null ? `${a.marksObtained}/${a.totalMarks || 100}` : '-'}
-                      </Text>
-                      <Text style={[styles.tableCell, styles.colWeight]}>{a.weightPercentage || 0}%</Text>
-                      <View style={[styles.tableCell, styles.colGrade]}>
-                        {a.gradeObtained ? (
-                          <View style={[styles.miniBadge, { backgroundColor: getGradeColor(a.gradeObtained) + '20' }]}>
-                            <Text style={[styles.miniBadgeText, { color: getGradeColor(a.gradeObtained) }]}>{a.gradeObtained}</Text>
-                          </View>
-                        ) : (
-                          <Text style={styles.pendingText}>-</Text>
-                        )}
-                      </View>
-                    </View>
-                  ))}
+                    );
+                  })}
                 </>
               )}
 
@@ -185,25 +241,28 @@ const ModuleGradesTableScreen = ({ navigation }) => {
                     <Text style={[styles.tableHeaderText, styles.colWeight]}>Wt%</Text>
                     <Text style={[styles.tableHeaderText, styles.colGrade]}>Grade</Text>
                   </View>
-                  {assessments.map((a, i) => (
-                    <View key={a.id || i} style={[styles.tableRow, i % 2 === 0 && styles.tableRowAlt]}>
-                      <Text style={[styles.tableCell, styles.colName]} numberOfLines={1}>{a.title || 'Untitled'}</Text>
-                      <Text style={[styles.tableCell, styles.colType]}>{a.type || 'exam'}</Text>
-                      <Text style={[styles.tableCell, styles.colMarks]}>
-                        {a.marksObtained != null ? `${a.marksObtained}/${a.totalMarks || 100}` : '-'}
-                      </Text>
-                      <Text style={[styles.tableCell, styles.colWeight]}>{a.weightPercentage || 0}%</Text>
-                      <View style={[styles.tableCell, styles.colGrade]}>
-                        {a.gradeObtained ? (
-                          <View style={[styles.miniBadge, { backgroundColor: getGradeColor(a.gradeObtained) + '20' }]}>
-                            <Text style={[styles.miniBadgeText, { color: getGradeColor(a.gradeObtained) }]}>{a.gradeObtained}</Text>
-                          </View>
-                        ) : (
-                          <Text style={styles.pendingText}>-</Text>
-                        )}
+                  {assessments.map((a, i) => {
+                    const displayGrade = getDisplayGrade(a);
+                    return (
+                      <View key={a.id || i} style={[styles.tableRow, i % 2 === 0 && styles.tableRowAlt]}>
+                        <Text style={[styles.tableCell, styles.colName]} numberOfLines={1}>{a.title || 'Untitled'}</Text>
+                        <Text style={[styles.tableCell, styles.colType]}>{a.type || 'exam'}</Text>
+                        <Text style={[styles.tableCell, styles.colMarks]}>
+                          {a.marksObtained != null ? `${a.marksObtained}/${a.totalMarks || 100}` : '-'}
+                        </Text>
+                        <Text style={[styles.tableCell, styles.colWeight]}>{a.weightPercentage || 0}%</Text>
+                        <View style={[styles.tableCell, styles.colGrade]}>
+                          {displayGrade ? (
+                            <View style={[styles.miniBadge, { backgroundColor: getGradeColor(displayGrade) + '20' }]}>
+                              <Text style={[styles.miniBadgeText, { color: getGradeColor(displayGrade) }]}>{displayGrade}</Text>
+                            </View>
+                          ) : (
+                            <Text style={styles.pendingText}>-</Text>
+                          )}
+                        </View>
                       </View>
-                    </View>
-                  ))}
+                    );
+                  })}
                 </>
               )}
             </View>
@@ -225,7 +284,6 @@ const styles = StyleSheet.create({
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingTop: 4 },
 
-  // Module Card
   moduleCard: { backgroundColor: COLORS.surface, borderRadius: 16, padding: 16, marginBottom: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2 },
   moduleHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: COLORS.surfaceAlt },
   moduleDot: { width: 8, height: 8, borderRadius: 4 },
@@ -239,12 +297,10 @@ const styles = StyleSheet.create({
   moduleAvgLabel: { fontSize: 9, fontFamily: 'JosefinSans-Bold', color: COLORS.textMuted, textTransform: 'uppercase' },
   moduleAvgValue: { fontSize: 13, fontFamily: 'JosefinSans-Bold', color: COLORS.primary },
 
-  // Section
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
   sectionTitle: { fontSize: 13, fontFamily: 'JosefinSans-Bold', color: COLORS.primary },
   sectionCount: { fontSize: 11, fontFamily: 'JosefinSans-Bold', color: COLORS.textMuted, backgroundColor: COLORS.surfaceAlt, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
 
-  // Table
   tableHeader: { flexDirection: 'row', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: COLORS.primary + '30', marginBottom: 4 },
   tableHeaderText: { fontSize: 9, fontFamily: 'JosefinSans-Bold', color: COLORS.primary, textTransform: 'uppercase', letterSpacing: 0.5 },
   tableRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
@@ -262,7 +318,6 @@ const styles = StyleSheet.create({
   miniBadgeText: { fontSize: 10, fontFamily: 'JosefinSans-Bold' },
   pendingText: { fontSize: 10, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textMuted },
 
-  // Empty
   emptyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14 },
   emptyText: { fontSize: 11, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textMuted },
 });
