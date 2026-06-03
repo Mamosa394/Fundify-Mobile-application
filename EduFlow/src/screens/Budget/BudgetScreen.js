@@ -24,13 +24,13 @@ import { Ionicons }       from '@expo/vector-icons';
 import * as Haptics       from 'expo-haptics';
 import { SafeAreaView }   from 'react-native-safe-area-context';
 import { StatusBar }      from 'expo-status-bar';
-import { useNavigation, useIsFocused } from '@react-navigation/native'; // ✅ Added useIsFocused
+import { useNavigation, useIsFocused } from '@react-navigation/native';
 
-// ✅ Fixed import paths
 import {
   getCurrentBudget,
   getExpenses,
   BUDGET_CATEGORIES,
+  initializeUserBudget,
 } from '../../services/budgetService';
 
 import { auth } from '../../services/firebase';
@@ -73,7 +73,6 @@ function BudgetRing({ spent = 0, total = 1 }) {
           </SvgGradient>
         </Defs>
 
-        {/* Track */}
         <Circle
           stroke={COLORS.border}
           fill="none"
@@ -83,7 +82,6 @@ function BudgetRing({ spent = 0, total = 1 }) {
           strokeWidth={strokeWidth}
         />
 
-        {/* Progress */}
         <Circle
           stroke="url(#ringGrad)"
           fill="none"
@@ -170,15 +168,15 @@ function SummaryCard({ label, amount, percentage, isPositive, icon }) {
 }
 
 // ─── BudgetScreen ─────────────────────────────────────────────────────────────
-// ✅ Removed navigation prop from params - using useNavigation hook instead
 export default function BudgetScreen() {
-  const navigation = useNavigation(); // ✅ Get navigation from hook
-  const isFocused = useIsFocused();   // ✅ Track screen focus
+  const navigation = useNavigation();
+  const isFocused = useIsFocused();
   
   const [budget,     setBudget]     = useState(null);
   const [expenses,   setExpenses]   = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState(false);
 
   const userId = auth.currentUser?.uid;
 
@@ -193,13 +191,22 @@ export default function BudgetScreen() {
       setLoading(true);
       console.log('Loading budget for user:', userId);
       
-      const [budgetData, expenseData] = await Promise.all([
-        getCurrentBudget(userId),
-        getExpenses(userId),
-      ]);
+      const budgetData = await getCurrentBudget(userId);
+      
+      // If no budget exists for current month, redirect to setup wizard
+      if (!budgetData) {
+        console.log('No budget found - redirecting to setup wizard');
+        setNeedsSetup(true);
+        setLoading(false);
+        return;
+      }
+      
+      // Budget exists, load expenses
+      const expenseData = await getExpenses(userId);
       
       setBudget(budgetData);
       setExpenses(expenseData || []);
+      setNeedsSetup(false);
       console.log('Budget loaded successfully');
     } catch (error) {
       console.error('BudgetScreen loadData error:', error);
@@ -208,12 +215,19 @@ export default function BudgetScreen() {
     }
   }, [userId]);
 
-  // ✅ Load data when screen is focused or userId changes
+  // Load data when screen is focused or userId changes
   useEffect(() => {
     if (userId && isFocused) {
       loadData();
     }
   }, [loadData, userId, isFocused]);
+
+  // Redirect to setup wizard if no budget exists
+  useEffect(() => {
+    if (needsSetup && !loading) {
+      navigation.navigate('BudgetSetupWizard');
+    }
+  }, [needsSetup, loading, navigation]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -226,9 +240,14 @@ export default function BudgetScreen() {
     return BUDGET_CATEGORIES.map((cat) => ({
       ...cat,
       spent:    budget.categories?.[cat.id]?.spent    || 0,
-      budgeted: budget.categories?.[cat.id]?.budgeted || 1,
+      budgeted: budget.categories?.[cat.id]?.budgeted || 0,
     }));
   }, [budget]);
+
+  // Get recent expenses for the expenses list
+  const recentExpenses = useMemo(() => {
+    return expenses.slice(0, 5); // Show last 5 expenses
+  }, [expenses]);
 
   const totalSpent  = budget?.spentTotal   || 0;
   const totalBudget = budget?.totalBudget  || 0;
@@ -241,6 +260,32 @@ export default function BudgetScreen() {
     return (
       <SafeAreaView style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.accent} />
+        <Text style={styles.loadingText}>Loading your budget...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  // If no budget exists, show setup prompt
+  if (!budget) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <Ionicons name="wallet-outline" size={64} color={COLORS.muted} />
+        <Text style={styles.noBudgetTitle}>No Budget Set Up</Text>
+        <Text style={styles.noBudgetText}>
+          Set up your monthly budget to start tracking your expenses
+        </Text>
+        <Pressable
+          style={styles.setupButton}
+          onPress={() => navigation.navigate('BudgetSetupWizard')}
+        >
+          <LinearGradient
+            colors={['#1C1C1E', '#2C2C2E']}
+            style={styles.setupButtonGradient}
+          >
+            <Ionicons name="create-outline" size={20} color="#FFF" />
+            <Text style={styles.setupButtonText}>Set Up Budget</Text>
+          </LinearGradient>
+        </Pressable>
       </SafeAreaView>
     );
   }
@@ -264,9 +309,12 @@ export default function BudgetScreen() {
         <View style={styles.header}>
           <View>
             <Text style={styles.screenTitle}>Budget</Text>
+            <Text style={styles.monthLabel}>
+              {new Date().toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' })}
+            </Text>
           </View>
 
-          {/* ✅ + button now opens AddExpenseModal */}
+          {/* + button for adding additional expenses */}
           <Pressable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -284,6 +332,11 @@ export default function BudgetScreen() {
         {/* ── Hero Ring Card ── */}
         <View style={styles.heroCard}>
           <BudgetRing spent={totalSpent} total={totalBudget} />
+          <Text style={styles.budgetLabel}>
+            {totalBudget > 0 
+              ? `R${totalBudget.toLocaleString('en-ZA')} monthly budget`
+              : 'No budget set'}
+          </Text>
         </View>
 
         {/* ── Summary Row ── */}
@@ -311,30 +364,57 @@ export default function BudgetScreen() {
           />
         </View>
 
-        {/* ── Section Header ── */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Categories</Text>
-          <Pressable onPress={() => navigation.navigate('AllCategories')}>
-            <Text style={styles.viewAll}>View all</Text>
-          </Pressable>
-        </View>
+        {/* ── Recent Expenses ── */}
+        {recentExpenses.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Recent Expenses</Text>
+              <Pressable onPress={() => navigation.navigate('ExpenseDetail', {
+                categoryId: 'all',
+                categoryName: 'All Expenses',
+              })}>
+                <Text style={styles.viewAll}>View all</Text>
+              </Pressable>
+            </View>
+            {recentExpenses.map((expense) => {
+              const category = BUDGET_CATEGORIES.find(c => c.id === expense.category);
+              return (
+                <View key={expense.id} style={styles.expenseRow}>
+                  <View style={[styles.expenseIcon, { backgroundColor: (category?.color || '#9CA3AF') + '20' }]}>
+                    <Ionicons name={category?.icon || 'apps-outline'} size={18} color={category?.color || '#9CA3AF'} />
+                  </View>
+                  <View style={styles.expenseInfo}>
+                    <Text style={styles.expenseName}>{expense.note || expense.description || category?.name}</Text>
+                    <Text style={styles.expenseDate}>{expense.date}</Text>
+                  </View>
+                  <Text style={styles.expenseAmount}>-{formatMoney(expense.amount)}</Text>
+                </View>
+              );
+            })}
+          </View>
+        )}
 
-        {/* ── Categories List ── */}
-        <View style={styles.categoriesList}>
-          {categories.map((item) => (
-            <CategoryRow
-              key={item.id}
-              item={item}
-              // ✅ Now navigates to ExpenseDetail
-              onPress={() => {
-                Haptics.selectionAsync();
-                navigation.navigate('ExpenseDetail', {
-                  categoryId:   item.id,
-                  categoryName: item.name,
-                });
-              }}
-            />
-          ))}
+        {/* ── Categories Section ── */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Categories</Text>
+          </View>
+
+          <View style={styles.categoriesList}>
+            {categories.map((item) => (
+              <CategoryRow
+                key={item.id}
+                item={item}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  navigation.navigate('ExpenseDetail', {
+                    categoryId:   item.id,
+                    categoryName: item.name,
+                  });
+                }}
+              />
+            ))}
+          </View>
         </View>
 
         {/* ── CTA Banner → AI Advisor ── */}
@@ -383,13 +463,49 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: COLORS.background,
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.muted,
+  },
+  noBudgetTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: COLORS.text,
+    marginTop: 20,
+    marginBottom: 8,
+  },
+  noBudgetText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: COLORS.muted,
+    textAlign: 'center',
+    marginBottom: 24,
+    paddingHorizontal: 40,
+  },
+  setupButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  setupButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    gap: 10,
+  },
+  setupButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFF',
   },
   content: {
     paddingHorizontal: 20,
     paddingTop: 8,
   },
-
-  // Header
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -401,6 +517,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: COLORS.text,
     letterSpacing: -1.5,
+  },
+  monthLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.muted,
+    marginTop: 2,
   },
   headerButton: {
     width: 48,
@@ -419,8 +541,6 @@ const styles = StyleSheet.create({
     opacity: 0.8,
     transform: [{ scale: 0.96 }],
   },
-
-  // Hero Card
   heroCard: {
     backgroundColor: COLORS.surface,
     borderRadius: 32,
@@ -461,8 +581,12 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     marginTop: 4,
   },
-
-  // Summary Row
+  budgetLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.muted,
+    marginTop: 16,
+  },
   summaryRow: {
     flexDirection: 'row',
     gap: 10,
@@ -510,8 +634,9 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: COLORS.muted,
   },
-
-  // Section Header
+  section: {
+    marginBottom: 28,
+  },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -529,8 +654,41 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.muted,
   },
-
-  // Categories List
+  expenseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 8,
+  },
+  expenseIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  expenseInfo: {
+    flex: 1,
+  },
+  expenseName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  expenseDate: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: COLORS.muted,
+    marginTop: 2,
+  },
+  expenseAmount: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.negative,
+  },
   categoriesList: { marginBottom: 24 },
   categoryCard: {
     backgroundColor: COLORS.surface,
@@ -608,8 +766,6 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     marginTop: 2,
   },
-
-  // CTA Banner
   ctaBanner: {
     borderRadius: 24,
     overflow: 'hidden',

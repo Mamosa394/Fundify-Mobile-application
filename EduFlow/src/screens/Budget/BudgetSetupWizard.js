@@ -5,7 +5,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   Pressable,
   TextInput,
@@ -22,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
+import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 
 import { auth } from '../../services/firebase';
 import { 
@@ -33,7 +33,7 @@ import {
 
 const { width } = Dimensions.get('window');
 
-// ============ DESIGN TOKENS (from LoginScreen) ============
+// ============ DESIGN TOKENS ============
 const COLORS = {
   background: '#F8FAFC',
   surface: '#FFFFFF',
@@ -45,6 +45,7 @@ const COLORS = {
   accentDark: '#334155',
   border: 'rgba(255,255,255,0.95)',
   cardShadow: '#CBD5E1',
+  warning: '#F5A623',
 };
 
 const FONTS = {
@@ -123,6 +124,9 @@ const STEPS = {
   FOOD: 'food',
   EATING_OUT: 'eating_out',
   SUBSCRIPTIONS: 'subscriptions',
+  ENTERTAINMENT: 'entertainment',
+  BOOKS: 'books',
+  HEALTH: 'health',
   DEBT: 'debt',
   SAVINGS: 'savings',
   UTILITIES: 'utilities',
@@ -156,19 +160,21 @@ const STRATEGIES = {
   },
 };
 
+// ============ STUDENT SUBSCRIPTION PRICES (ZAR) ============
+const SUBSCRIPTION_OPTIONS = [
+  { id: 'netflix', label: 'Netflix Basic', icon: 'tv-outline', defaultAmount: '49' },
+  { id: 'spotify', label: 'Spotify Student', icon: 'musical-notes-outline', defaultAmount: '35' },
+  { id: 'apple_music', label: 'Apple Music Student', icon: 'musical-note-outline', defaultAmount: '30' },
+  { id: 'youtube', label: 'YouTube Premium Student', icon: 'logo-youtube', defaultAmount: '40' },
+  { id: 'showmax', label: 'Showmax Mobile', icon: 'tv-outline', defaultAmount: '39' },
+  { id: 'gym', label: 'Gym Student Membership', icon: 'fitness-outline', defaultAmount: '200' },
+  { id: 'gaming', label: 'PlayStation Plus', icon: 'game-controller-outline', defaultAmount: '85' },
+  { id: 'amazon', label: 'Prime Video', icon: 'film-outline', defaultAmount: '45' },
+];
+
 // ============ HELPERS ============
 const formatMoney = (amount) => {
   return `R${Number(amount || 0).toLocaleString('en-ZA')}`;
-};
-
-const getIncomeIcon = (type) => {
-  const incomeType = INCOME_TYPES[type];
-  return incomeType?.icon || 'cash-outline';
-};
-
-const getIncomeLabel = (type) => {
-  const incomeType = INCOME_TYPES[type];
-  return incomeType?.label || 'Income';
 };
 
 // ============ SUB-COMPONENTS ============
@@ -297,11 +303,14 @@ const OptionButton = ({ icon, label, selected, onPress, description }) => (
 );
 
 // Subscription Toggle
-const SubscriptionOption = ({ label, icon, selected, onToggle, amount, onChangeAmount }) => (
+const SubscriptionOption = ({ label, icon, selected, onToggle, amount, onChangeAmount, defaultAmount }) => (
   <View style={styles.subscriptionRow}>
     <View style={styles.subscriptionLeft}>
       <Ionicons name={icon} size={20} color="#475569" />
-      <Text style={styles.subscriptionLabel}>{label}</Text>
+      <View>
+        <Text style={styles.subscriptionLabel}>{label}</Text>
+        <Text style={styles.subscriptionPrice}>±R{defaultAmount}/mo</Text>
+      </View>
     </View>
     <View style={styles.subscriptionRight}>
       <Switch
@@ -310,16 +319,15 @@ const SubscriptionOption = ({ label, icon, selected, onToggle, amount, onChangeA
         trackColor={{ false: '#CBD5E1', true: '#34C759' }}
         thumbColor="#FFF"
       />
-      {selected && (
-        <TextInput
-          style={styles.subscriptionAmount}
-          value={amount}
-          onChangeText={onChangeAmount}
-          placeholder="R0"
-          placeholderTextColor="#94A3B8"
-          keyboardType="numeric"
-        />
-      )}
+      <TextInput
+        style={[styles.subscriptionAmount, !selected && styles.subscriptionAmountDisabled]}
+        value={selected ? amount : ''}
+        onChangeText={onChangeAmount}
+        placeholder="R0"
+        placeholderTextColor="#94A3B8"
+        keyboardType="numeric"
+        editable={selected}
+      />
     </View>
   </View>
 );
@@ -327,6 +335,7 @@ const SubscriptionOption = ({ label, icon, selected, onToggle, amount, onChangeA
 // ============ MAIN COMPONENT ============
 export default function BudgetSetupWizard() {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const [currentStep, setCurrentStep] = useState(0);
   const [wizardData, setWizardData] = useState({
     income: '',
@@ -337,16 +346,20 @@ export default function BudgetSetupWizard() {
     transportType: '',
     transportCost: '',
     dataCost: '',
-    buysGroceries: false,
+    buysData: null,
+    buysGroceries: null,
     groceriesCost: '',
     eatingOut: '',
     eatingOutCost: '',
     subscriptions: [],
-    hasDebt: false,
+    entertainmentCost: '',
+    booksCost: '',
+    healthCost: '',
+    hasDebt: null,
     debtAmount: '',
     savingsPercentage: 10,
     utilitiesCost: '',
-    paysUtilities: false,
+    paysUtilities: null,
     rentCost: '',
     strategy: '',
   });
@@ -354,7 +367,6 @@ export default function BudgetSetupWizard() {
   const [hasExistingIncome, setHasExistingIncome] = useState(false);
   const [loadingExistingData, setLoadingExistingData] = useState(true);
 
-  // Load existing income on mount
   useEffect(() => {
     loadExistingIncome();
   }, []);
@@ -392,7 +404,6 @@ export default function BudgetSetupWizard() {
     return baseIncome + extraIncome;
   };
 
-  // Define steps dynamically
   const getWizardSteps = useCallback(() => {
     const stepsList = [];
     
@@ -415,6 +426,9 @@ export default function BudgetSetupWizard() {
         STEPS.DATA,
         STEPS.FOOD,
         STEPS.EATING_OUT,
+        STEPS.ENTERTAINMENT,
+        STEPS.BOOKS,
+        STEPS.HEALTH,
         STEPS.SUBSCRIPTIONS,
         STEPS.DEBT,
         STEPS.SAVINGS,
@@ -428,6 +442,9 @@ export default function BudgetSetupWizard() {
         STEPS.DATA,
         { id: 'groceries', type: 'groceries' },
         STEPS.EATING_OUT,
+        STEPS.ENTERTAINMENT,
+        STEPS.BOOKS,
+        STEPS.HEALTH,
         STEPS.SUBSCRIPTIONS,
         STEPS.DEBT,
         STEPS.SAVINGS,
@@ -442,6 +459,9 @@ export default function BudgetSetupWizard() {
         STEPS.DATA,
         { id: 'groceries', type: 'groceries' },
         STEPS.EATING_OUT,
+        STEPS.ENTERTAINMENT,
+        STEPS.BOOKS,
+        STEPS.HEALTH,
         STEPS.SUBSCRIPTIONS,
         STEPS.DEBT,
         STEPS.SAVINGS,
@@ -461,6 +481,19 @@ export default function BudgetSetupWizard() {
     if (currentStep < steps.length - 1) {
       setCurrentStep(prev => prev + 1);
     } else {
+      const totalIncome = calculateTotalIncome();
+      const budget = calculateBudget();
+      const totalSpending = Object.values(budget.categories).reduce((a, b) => a + b, 0);
+      
+      if (totalSpending > totalIncome) {
+        Alert.alert(
+          'Budget Exceeds Income',
+          `Your planned spending (${formatMoney(totalSpending)}) exceeds your income (${formatMoney(totalIncome)}). Please go back and adjust your expenses.`,
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      
       handleComplete();
     }
   };
@@ -506,6 +539,24 @@ export default function BudgetSetupWizard() {
     const totalIncome = calculateTotalIncome();
     const strategy = wizardData.strategy;
     
+    const rentAmount = Number(wizardData.rentCost) || 0;
+    const utilitiesAmount = Number(wizardData.utilitiesCost) || 0;
+    const transportAmount = Number(wizardData.transportCost) || 0;
+    const dataAmount = wizardData.buysData ? (Number(wizardData.dataCost) || 0) : 0;
+    const groceriesAmount = wizardData.buysGroceries ? (Number(wizardData.groceriesCost) || 0) : 0;
+    const eatingOutAmount = Number(wizardData.eatingOutCost) || 0;
+    const entertainmentAmount = Number(wizardData.entertainmentCost) || 0;
+    const booksAmount = Number(wizardData.booksCost) || 0;
+    const healthAmount = Number(wizardData.healthCost) || 0;
+    const debtAmount = wizardData.hasDebt ? (Number(wizardData.debtAmount) || 0) : 0;
+    const savingsAmount = totalIncome * (wizardData.savingsPercentage / 100);
+    
+    const subscriptionsTotal = wizardData.subscriptions.reduce(
+      (sum, sub) => sum + (Number(sub.amount) || 0), 0
+    );
+    
+    const foodTotal = groceriesAmount + eatingOutAmount;
+    
     let allocations = {};
     
     if (strategy === '50/30/20') {
@@ -513,67 +564,47 @@ export default function BudgetSetupWizard() {
       const wants = totalIncome * 0.3;
       const savings = totalIncome * 0.2;
       
-      const rentAmount = Number(wizardData.rentCost) || 0;
-      const utilitiesAmount = Number(wizardData.utilitiesCost) || 0;
-      const transportAmount = Number(wizardData.transportCost) || 0;
-      const dataAmount = Number(wizardData.dataCost) || 0;
-      const groceriesAmount = Number(wizardData.groceriesCost) || 0;
-      
-      const fixedNeeds = rentAmount + utilitiesAmount + transportAmount + dataAmount + groceriesAmount;
-      const remainingNeeds = Math.max(0, needs - fixedNeeds);
-      
       allocations = {
         accommodation: rentAmount,
-        food: groceriesAmount || (wizardData.buysGroceries ? remainingNeeds * 0.5 : wants * 0.2),
+        food: foodTotal || needs * 0.4,
         transport: transportAmount,
         data: dataAmount,
-        entertainment: wants * 0.5,
-        health: wants * 0.15,
-        savings: savings,
-        other: wants * 0.15,
-        books: wants * 0.2,
+        entertainment: entertainmentAmount || wants * 0.4,
+        books: booksAmount || wants * 0.2,
+        health: healthAmount || wants * 0.1,
+        savings: savingsAmount || savings,
+        other: subscriptionsTotal + debtAmount + (wants * 0.1),
       };
     } else if (strategy === 'zero-sum') {
-      const rentAmount = Number(wizardData.rentCost) || 0;
-      const utilitiesAmount = Number(wizardData.utilitiesCost) || 0;
-      const transportAmount = Number(wizardData.transportCost) || 0;
-      const dataAmount = Number(wizardData.dataCost) || 0;
-      const groceriesAmount = Number(wizardData.groceriesCost) || 0;
-      const eatingOutAmount = Number(wizardData.eatingOutCost) || 0;
-      const debtAmount = Number(wizardData.debtAmount) || 0;
-      const savingsAmount = totalIncome * (wizardData.savingsPercentage / 100);
+      const userProvidedTotal = rentAmount + utilitiesAmount + transportAmount + 
+                               dataAmount + foodTotal + entertainmentAmount + 
+                               booksAmount + healthAmount + debtAmount + 
+                               subscriptionsTotal + savingsAmount;
       
-      const subscriptionsTotal = wizardData.subscriptions.reduce(
-        (sum, sub) => sum + (Number(sub.amount) || 0), 0
-      );
-      
-      const fixedExpenses = rentAmount + utilitiesAmount + transportAmount + 
-                           dataAmount + groceriesAmount + eatingOutAmount + 
-                           debtAmount + subscriptionsTotal + savingsAmount;
-      
-      const remaining = Math.max(0, totalIncome - fixedExpenses);
+      const remaining = Math.max(0, totalIncome - userProvidedTotal);
       
       allocations = {
         accommodation: rentAmount,
-        food: groceriesAmount + eatingOutAmount,
+        food: foodTotal,
         transport: transportAmount,
         data: dataAmount,
-        entertainment: remaining * 0.4,
+        entertainment: entertainmentAmount || remaining * 0.3,
+        books: booksAmount || remaining * 0.3,
+        health: healthAmount || remaining * 0.1,
         savings: savingsAmount,
         other: remaining * 0.3,
-        books: remaining * 0.3,
       };
     } else {
-      const savingsAmount = totalIncome * (wizardData.savingsPercentage / 100);
-      const remaining = totalIncome - savingsAmount;
-      
       allocations = {
-        accommodation: Number(wizardData.rentCost) || remaining * 0.4,
-        food: remaining * 0.25,
-        transport: remaining * 0.15,
-        data: remaining * 0.1,
+        accommodation: rentAmount || totalIncome * 0.3,
+        food: foodTotal || totalIncome * 0.2,
+        transport: transportAmount || totalIncome * 0.1,
+        data: dataAmount || totalIncome * 0.05,
+        entertainment: entertainmentAmount || totalIncome * 0.1,
+        books: booksAmount || totalIncome * 0.05,
+        health: healthAmount || totalIncome * 0.05,
         savings: savingsAmount,
-        other: remaining * 0.1,
+        other: totalIncome * 0.05,
       };
     }
 
@@ -595,38 +626,25 @@ export default function BudgetSetupWizard() {
     const stepId = currentStepData?.id || currentStepData;
     
     switch (stepId) {
-      case STEPS.INCOME:
-        return renderIncomeStep();
-      case STEPS.EXTRA_INCOME:
-        return renderExtraIncomeStep();
-      case STEPS.LIVING_SITUATION:
-        return renderLivingSituationStep();
-      case STEPS.TRANSPORT:
-        return renderTransportStep();
-      case STEPS.DATA:
-        return renderDataStep();
-      case STEPS.FOOD:
-        return renderFoodStep();
-      case STEPS.EATING_OUT:
-        return renderEatingOutStep();
-      case STEPS.SUBSCRIPTIONS:
-        return renderSubscriptionsStep();
-      case STEPS.DEBT:
-        return renderDebtStep();
-      case STEPS.SAVINGS:
-        return renderSavingsStep();
-      case 'accommodation_cost':
-        return renderRentStep();
-      case 'utilities':
-        return renderUtilitiesStep();
-      case 'groceries':
-        return renderGroceriesStep();
-      case STEPS.STRATEGY:
-        return renderStrategyStep();
-      case STEPS.SUMMARY:
-        return renderSummaryStep();
-      default:
-        return null;
+      case STEPS.INCOME: return renderIncomeStep();
+      case STEPS.EXTRA_INCOME: return renderExtraIncomeStep();
+      case STEPS.LIVING_SITUATION: return renderLivingSituationStep();
+      case STEPS.TRANSPORT: return renderTransportStep();
+      case STEPS.DATA: return renderDataStep();
+      case STEPS.FOOD: return renderFoodStep();
+      case STEPS.EATING_OUT: return renderEatingOutStep();
+      case STEPS.ENTERTAINMENT: return renderEntertainmentStep();
+      case STEPS.BOOKS: return renderBooksStep();
+      case STEPS.HEALTH: return renderHealthStep();
+      case STEPS.SUBSCRIPTIONS: return renderSubscriptionsStep();
+      case STEPS.DEBT: return renderDebtStep();
+      case STEPS.SAVINGS: return renderSavingsStep();
+      case 'accommodation_cost': return renderRentStep();
+      case 'utilities': return renderUtilitiesStep();
+      case 'groceries': return renderGroceriesStep();
+      case STEPS.STRATEGY: return renderStrategyStep();
+      case STEPS.SUMMARY: return renderSummaryStep();
+      default: return null;
     }
   };
 
@@ -899,8 +917,6 @@ export default function BudgetSetupWizard() {
                   setWizardData(prev => ({ ...prev, transportType: option.id }));
                   if (option.id === 'walk') {
                     setWizardData(prev => ({ ...prev, transportCost: '0' }));
-                  } else {
-                    setWizardData(prev => ({ ...prev, transportCost: '' }));
                   }
                 }}
               />
@@ -917,15 +933,10 @@ export default function BudgetSetupWizard() {
                 onChangeText={(value) => setWizardData(prev => ({ ...prev, transportCost: value }))}
                 placeholder="600"
               />
-              <Text style={styles.amountHint}>
-                {wizardData.transportType === 'taxi'
-                  ? 'Most students spend R300–R800/month on transport'
-                  : 'Include petrol and basic maintenance'}
-              </Text>
             </View>
           )}
 
-          {(wizardData.transportType === 'walk' || (wizardData.transportCost && wizardData.transportCost !== '0')) && (
+          {wizardData.transportType && (
             <View style={styles.navRow}>
               <Pressable style={styles.backButton} onPress={handleBack}>
                 <Ionicons name="arrow-back" size={18} color="#475569" />
@@ -962,23 +973,19 @@ export default function BudgetSetupWizard() {
               icon="wifi-outline"
               label="Yes, I buy data"
               description="You manage your own connectivity"
-              selected={wizardData.dataCost !== '' && wizardData.dataCost !== '0'}
-              onPress={() => {
-                if (!wizardData.dataCost || wizardData.dataCost === '0') {
-                  setWizardData(prev => ({ ...prev, dataCost: '300' }));
-                }
-              }}
+              selected={wizardData.buysData === true}
+              onPress={() => setWizardData(prev => ({ ...prev, buysData: true, dataCost: prev.dataCost || '300' }))}
             />
             <OptionButton
               icon="home-outline"
               label="No, family covers it"
               description="Someone else pays for data"
-              selected={wizardData.dataCost === '0'}
-              onPress={() => setWizardData(prev => ({ ...prev, dataCost: '0' }))}
+              selected={wizardData.buysData === false}
+              onPress={() => setWizardData(prev => ({ ...prev, buysData: false, dataCost: '0' }))}
             />
           </View>
 
-          {wizardData.dataCost && wizardData.dataCost !== '0' && (
+          {wizardData.buysData && (
             <View style={styles.amountSection}>
               <Text style={styles.inputLabel}>MONTHLY DATA/AIRTIME</Text>
               <AmountInput
@@ -986,13 +993,10 @@ export default function BudgetSetupWizard() {
                 onChangeText={(value) => setWizardData(prev => ({ ...prev, dataCost: value }))}
                 placeholder="300"
               />
-              <Text style={styles.amountHint}>
-                Students typically spend R200–R500/month on data
-              </Text>
             </View>
           )}
 
-          {wizardData.dataCost !== undefined && (
+          {wizardData.buysData !== null && (
             <View style={styles.navRow}>
               <Pressable style={styles.backButton} onPress={handleBack}>
                 <Ionicons name="arrow-back" size={18} color="#475569" />
@@ -1049,13 +1053,10 @@ export default function BudgetSetupWizard() {
                 onChangeText={(value) => setWizardData(prev => ({ ...prev, groceriesCost: value }))}
                 placeholder="800"
               />
-              <Text style={styles.amountHint}>
-                Students typically spend R600–R1,200/month on groceries
-              </Text>
             </View>
           )}
 
-          {wizardData.buysGroceries !== undefined && (
+          {wizardData.buysGroceries !== null && (
             <View style={styles.navRow}>
               <Pressable style={styles.backButton} onPress={handleBack}>
                 <Ionicons name="arrow-back" size={18} color="#475569" />
@@ -1143,20 +1144,134 @@ export default function BudgetSetupWizard() {
     );
   };
 
+  // Entertainment Step
+  const renderEntertainmentStep = () => {
+    return (
+      <QuestionCard
+        step={currentStep + 1}
+        totalSteps={steps.length}
+        title="Monthly Entertainment Budget"
+        subtitle="Movies, gaming, events, etc."
+      >
+        <ScrollView showsVerticalScrollIndicator={false} style={styles.stepScroll}>
+          <View style={styles.amountSection}>
+            <Text style={styles.inputLabel}>MONTHLY ENTERTAINMENT</Text>
+            <AmountInput
+              value={wizardData.entertainmentCost}
+              onChangeText={(value) => setWizardData(prev => ({ ...prev, entertainmentCost: value }))}
+              placeholder="200"
+            />
+          </View>
+
+          <View style={styles.navRow}>
+            <Pressable style={styles.backButton} onPress={handleBack}>
+              <Ionicons name="arrow-back" size={18} color="#475569" />
+              <Text style={styles.backButtonText}>Back</Text>
+            </Pressable>
+            <Pressable style={styles.nextButton} onPress={handleNext}>
+              <LinearGradient
+                colors={['#475569', '#334155']}
+                style={styles.nextButtonGradient}
+              >
+                <Text style={styles.nextButtonText}>Continue</Text>
+                <Ionicons name="arrow-forward" size={18} color="#FFF" />
+              </LinearGradient>
+            </Pressable>
+          </View>
+        </ScrollView>
+      </QuestionCard>
+    );
+  };
+
+  // Books Step
+  const renderBooksStep = () => {
+    return (
+      <QuestionCard
+        step={currentStep + 1}
+        totalSteps={steps.length}
+        title="Books & Stationery Budget"
+        subtitle="Textbooks, printing, supplies"
+      >
+        <ScrollView showsVerticalScrollIndicator={false} style={styles.stepScroll}>
+          <View style={styles.amountSection}>
+            <Text style={styles.inputLabel}>MONTHLY BOOKS/STATIONERY</Text>
+            <AmountInput
+              value={wizardData.booksCost}
+              onChangeText={(value) => setWizardData(prev => ({ ...prev, booksCost: value }))}
+              placeholder="150"
+            />
+          </View>
+
+          <View style={styles.navRow}>
+            <Pressable style={styles.backButton} onPress={handleBack}>
+              <Ionicons name="arrow-back" size={18} color="#475569" />
+              <Text style={styles.backButtonText}>Back</Text>
+            </Pressable>
+            <Pressable style={styles.nextButton} onPress={handleNext}>
+              <LinearGradient
+                colors={['#475569', '#334155']}
+                style={styles.nextButtonGradient}
+              >
+                <Text style={styles.nextButtonText}>Continue</Text>
+                <Ionicons name="arrow-forward" size={18} color="#FFF" />
+              </LinearGradient>
+            </Pressable>
+          </View>
+        </ScrollView>
+      </QuestionCard>
+    );
+  };
+
+  // Health Step
+  const renderHealthStep = () => {
+    return (
+      <QuestionCard
+        step={currentStep + 1}
+        totalSteps={steps.length}
+        title="Health & Wellness Budget"
+        subtitle="Medical, toiletries, gym (if not subscription)"
+      >
+        <ScrollView showsVerticalScrollIndicator={false} style={styles.stepScroll}>
+          <View style={styles.amountSection}>
+            <Text style={styles.inputLabel}>MONTHLY HEALTH/WELLNESS</Text>
+            <AmountInput
+              value={wizardData.healthCost}
+              onChangeText={(value) => setWizardData(prev => ({ ...prev, healthCost: value }))}
+              placeholder="100"
+            />
+          </View>
+
+          <View style={styles.navRow}>
+            <Pressable style={styles.backButton} onPress={handleBack}>
+              <Ionicons name="arrow-back" size={18} color="#475569" />
+              <Text style={styles.backButtonText}>Back</Text>
+            </Pressable>
+            <Pressable style={styles.nextButton} onPress={handleNext}>
+              <LinearGradient
+                colors={['#475569', '#334155']}
+                style={styles.nextButtonGradient}
+              >
+                <Text style={styles.nextButtonText}>Continue</Text>
+                <Ionicons name="arrow-forward" size={18} color="#FFF" />
+              </LinearGradient>
+            </Pressable>
+          </View>
+        </ScrollView>
+      </QuestionCard>
+    );
+  };
+
   // Subscriptions Step
   const renderSubscriptionsStep = () => {
-    const subscriptionOptions = [
-      { id: 'netflix', label: 'Netflix/Streaming', icon: 'tv-outline' },
-      { id: 'spotify', label: 'Spotify/Apple Music', icon: 'musical-notes-outline' },
-      { id: 'gym', label: 'Gym Membership', icon: 'fitness-outline' },
-      { id: 'gaming', label: 'Gaming/PS Plus', icon: 'game-controller-outline' },
-    ];
-
     const updateSubscription = (id, selected, amount = '') => {
+      const option = SUBSCRIPTION_OPTIONS.find(o => o.id === id);
       if (selected) {
         setWizardData(prev => ({
           ...prev,
-          subscriptions: [...prev.subscriptions, { id, amount: amount || '150' }]
+          subscriptions: [...prev.subscriptions.filter(s => s.id !== id), { 
+            id, 
+            amount: amount || option?.defaultAmount || '0' 
+          }]
         }));
       } else {
         setWizardData(prev => ({
@@ -1171,21 +1286,26 @@ export default function BudgetSetupWizard() {
       return sub?.amount || '';
     };
 
+    const isSubscriptionSelected = (id) => {
+      return wizardData.subscriptions.some(s => s.id === id);
+    };
+
     return (
       <QuestionCard
         step={currentStep + 1}
         totalSteps={steps.length}
         title="Monthly Subscriptions"
-        subtitle="Netflix, Spotify, gym, etc."
+        subtitle="Student pricing shown where available"
       >
         <ScrollView showsVerticalScrollIndicator={false} style={styles.stepScroll}>
-          {subscriptionOptions.map(option => (
+          {SUBSCRIPTION_OPTIONS.map(option => (
             <SubscriptionOption
               key={option.id}
               icon={option.icon}
               label={option.label}
-              selected={wizardData.subscriptions.some(s => s.id === option.id)}
-              onToggle={(val) => updateSubscription(option.id, val)}
+              defaultAmount={option.defaultAmount}
+              selected={isSubscriptionSelected(option.id)}
+              onToggle={(val) => updateSubscription(option.id, val, getSubscriptionAmount(option.id))}
               amount={getSubscriptionAmount(option.id)}
               onChangeAmount={(amount) => updateSubscription(option.id, true, amount)}
             />
@@ -1249,7 +1369,7 @@ export default function BudgetSetupWizard() {
             </View>
           )}
 
-          {wizardData.hasDebt !== undefined && (
+          {wizardData.hasDebt !== null && (
             <View style={styles.navRow}>
               <Pressable style={styles.backButton} onPress={handleBack}>
                 <Ionicons name="arrow-back" size={18} color="#475569" />
@@ -1274,6 +1394,7 @@ export default function BudgetSetupWizard() {
   // Savings Step
   const renderSavingsStep = () => {
     const totalIncome = calculateTotalIncome();
+    const savingsAmount = totalIncome * (wizardData.savingsPercentage / 100);
     
     return (
       <QuestionCard
@@ -1286,7 +1407,7 @@ export default function BudgetSetupWizard() {
           <View style={styles.savingsContainer}>
             <Text style={styles.savingsPercentage}>{wizardData.savingsPercentage}%</Text>
             <Text style={styles.savingsAmount}>
-              = {formatMoney(totalIncome * (wizardData.savingsPercentage / 100))}/month
+              = {formatMoney(savingsAmount)}/month
             </Text>
             
             <View style={styles.sliderContainer}>
@@ -1303,7 +1424,7 @@ export default function BudgetSetupWizard() {
             </View>
             
             <View style={styles.percentageButtons}>
-              {[5, 10, 15, 20, 30].map(pct => (
+              {[5, 10, 15, 20, 25, 30].map(pct => (
                 <Pressable
                   key={pct}
                   style={[
@@ -1320,6 +1441,13 @@ export default function BudgetSetupWizard() {
                   </Text>
                 </Pressable>
               ))}
+            </View>
+            
+            <View style={styles.savingsInfoCard}>
+              <Ionicons name="wallet-outline" size={20} color="#475569" />
+              <Text style={styles.savingsInfoText}>
+                After saving {formatMoney(savingsAmount)}, you'll have {formatMoney(totalIncome - savingsAmount)} for expenses
+              </Text>
             </View>
           </View>
 
@@ -1360,11 +1488,6 @@ export default function BudgetSetupWizard() {
               onChangeText={(value) => setWizardData(prev => ({ ...prev, rentCost: value }))}
               placeholder="3500"
             />
-            <Text style={styles.amountHint}>
-              {wizardData.livingSituation === 'residence' 
-                ? 'University residences typically cost R2,500–R5,000/month'
-                : 'Private rentals typically cost R3,000–R7,000/month'}
-            </Text>
           </View>
 
           <View style={styles.navRow}>
@@ -1425,7 +1548,7 @@ export default function BudgetSetupWizard() {
             </View>
           )}
 
-          {wizardData.paysUtilities !== undefined && (
+          {wizardData.paysUtilities !== null && (
             <View style={styles.navRow}>
               <Pressable style={styles.backButton} onPress={handleBack}>
                 <Ionicons name="arrow-back" size={18} color="#475569" />
@@ -1447,7 +1570,7 @@ export default function BudgetSetupWizard() {
     );
   };
 
-  // Groceries Step (for residence/renting)
+  // Groceries Step
   const renderGroceriesStep = () => {
     return (
       <QuestionCard
@@ -1464,9 +1587,6 @@ export default function BudgetSetupWizard() {
               onChangeText={(value) => setWizardData(prev => ({ ...prev, groceriesCost: value }))}
               placeholder="1500"
             />
-            <Text style={styles.amountHint}>
-              Students typically spend R1,000–R2,500/month on groceries
-            </Text>
           </View>
 
           <View style={styles.navRow}>
@@ -1558,21 +1678,23 @@ export default function BudgetSetupWizard() {
             </Pressable>
           ))}
 
-          <View style={styles.navRow}>
-            <Pressable style={styles.backButton} onPress={handleBack}>
-              <Ionicons name="arrow-back" size={18} color="#475569" />
-              <Text style={styles.backButtonText}>Back</Text>
-            </Pressable>
-            <Pressable style={styles.nextButton} onPress={handleNext}>
-              <LinearGradient
-                colors={['#475569', '#334155']}
-                style={styles.nextButtonGradient}
-              >
-                <Text style={styles.nextButtonText}>Review Budget</Text>
-                <Ionicons name="arrow-forward" size={18} color="#FFF" />
-              </LinearGradient>
-            </Pressable>
-          </View>
+          {wizardData.strategy && (
+            <View style={styles.navRow}>
+              <Pressable style={styles.backButton} onPress={handleBack}>
+                <Ionicons name="arrow-back" size={18} color="#475569" />
+                <Text style={styles.backButtonText}>Back</Text>
+              </Pressable>
+              <Pressable style={styles.nextButton} onPress={handleNext}>
+                <LinearGradient
+                  colors={['#475569', '#334155']}
+                  style={styles.nextButtonGradient}
+                >
+                  <Text style={styles.nextButtonText}>Review Budget</Text>
+                  <Ionicons name="arrow-forward" size={18} color="#FFF" />
+                </LinearGradient>
+              </Pressable>
+            </View>
+          )}
         </ScrollView>
       </QuestionCard>
     );
@@ -1582,12 +1704,16 @@ export default function BudgetSetupWizard() {
   const renderSummaryStep = () => {
     const totalIncome = calculateTotalIncome();
     const budget = calculateBudget();
+    const totalSpending = Object.values(budget.categories).reduce((a, b) => a + b, 0);
+    const remaining = totalIncome - totalSpending;
+    const isOverBudget = remaining < 0;
+    const savingsAmount = totalIncome * (wizardData.savingsPercentage / 100);
     
     return (
       <QuestionCard
         step={currentStep + 1}
         totalSteps={steps.length}
-        title="Your Budget Summary"
+        title="Budget Summary"
         subtitle="Review your personalized budget plan"
       >
         <ScrollView showsVerticalScrollIndicator={false} style={styles.stepScroll}>
@@ -1598,44 +1724,139 @@ export default function BudgetSetupWizard() {
 
           <View style={styles.summaryDivider} />
 
+          <Text style={styles.summarySectionTitle}>Allocated Expenses</Text>
+          
           <View style={styles.summaryCategories}>
-            {Object.entries(budget.categories).map(([category, amount]) => (
-              amount > 0 && (
-                <View key={category} style={styles.summaryRow}>
-                  <Text style={styles.summaryCategory}>
-                    {category.charAt(0).toUpperCase() + category.slice(1)}
-                  </Text>
-                  <Text style={styles.summaryAmount}>{formatMoney(amount)}</Text>
-                </View>
-              )
-            ))}
+            {wizardData.rentCost ? (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryCategory}>Accommodation</Text>
+                <Text style={styles.summaryAmount}>{formatMoney(wizardData.rentCost)}</Text>
+              </View>
+            ) : null}
+            
+            {wizardData.paysUtilities ? (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryCategory}>Utilities</Text>
+                <Text style={styles.summaryAmount}>{formatMoney(wizardData.utilitiesCost)}</Text>
+              </View>
+            ) : null}
+            
+            {wizardData.transportCost && wizardData.transportCost !== '0' ? (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryCategory}>Transport</Text>
+                <Text style={styles.summaryAmount}>{formatMoney(wizardData.transportCost)}</Text>
+              </View>
+            ) : null}
+            
+            {wizardData.buysData ? (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryCategory}>Data & Airtime</Text>
+                <Text style={styles.summaryAmount}>{formatMoney(wizardData.dataCost)}</Text>
+              </View>
+            ) : null}
+            
+            {wizardData.buysGroceries ? (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryCategory}>Groceries</Text>
+                <Text style={styles.summaryAmount}>{formatMoney(wizardData.groceriesCost)}</Text>
+              </View>
+            ) : null}
+            
+            {wizardData.eatingOutCost && wizardData.eatingOutCost !== '0' ? (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryCategory}>Eating Out</Text>
+                <Text style={styles.summaryAmount}>{formatMoney(wizardData.eatingOutCost)}</Text>
+              </View>
+            ) : null}
+            
+            {wizardData.entertainmentCost && wizardData.entertainmentCost !== '0' ? (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryCategory}>Entertainment</Text>
+                <Text style={styles.summaryAmount}>{formatMoney(wizardData.entertainmentCost)}</Text>
+              </View>
+            ) : null}
+            
+            {wizardData.booksCost && wizardData.booksCost !== '0' ? (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryCategory}>Books & Stationery</Text>
+                <Text style={styles.summaryAmount}>{formatMoney(wizardData.booksCost)}</Text>
+              </View>
+            ) : null}
+            
+            {wizardData.healthCost && wizardData.healthCost !== '0' ? (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryCategory}>Health & Wellness</Text>
+                <Text style={styles.summaryAmount}>{formatMoney(wizardData.healthCost)}</Text>
+              </View>
+            ) : null}
+            
+            {wizardData.subscriptions.length > 0 ? (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryCategory}>Subscriptions</Text>
+                <Text style={styles.summaryAmount}>
+                  {formatMoney(wizardData.subscriptions.reduce((sum, s) => sum + (Number(s.amount) || 0), 0))}
+                </Text>
+              </View>
+            ) : null}
+            
+            {wizardData.hasDebt ? (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryCategory}>Debt Payments</Text>
+                <Text style={styles.summaryAmount}>{formatMoney(wizardData.debtAmount)}</Text>
+              </View>
+            ) : null}
+            
+            <View style={[styles.summaryRow, styles.summaryRowBold]}>
+              <Text style={styles.summaryCategoryBold}>Savings ({wizardData.savingsPercentage}%)</Text>
+              <Text style={styles.summaryAmountBold}>{formatMoney(savingsAmount)}</Text>
+            </View>
           </View>
 
           <View style={styles.summaryDivider} />
 
           <View style={styles.summaryTotal}>
             <Text style={styles.summaryTotalLabel}>Total Planned Spending</Text>
-            <Text style={styles.summaryTotalAmount}>
-              {formatMoney(Object.values(budget.categories).reduce((a, b) => a + b, 0))}
+            <Text style={[styles.summaryTotalAmount, isOverBudget && { color: COLORS.negative }]}>
+              {formatMoney(totalSpending)}
             </Text>
           </View>
 
-          <View style={styles.remainingContainer}>
-            <Ionicons name="happy-outline" size={24} color="#34C759" />
-            <Text style={styles.remainingText}>
-              {totalIncome - Object.values(budget.categories).reduce((a, b) => a + b, 0) >= 0
-                ? `You have ${formatMoney(totalIncome - Object.values(budget.categories).reduce((a, b) => a + b, 0))} remaining for flexible spending`
-                : 'Your expenses exceed your income. Consider adjusting your budget.'}
-            </Text>
-          </View>
+          {isOverBudget ? (
+            <View style={styles.warningContainer}>
+              <Ionicons name="warning" size={24} color={COLORS.negative} />
+              <View style={styles.warningTextWrap}>
+                <Text style={styles.warningTitle}>Budget Exceeds Income</Text>
+                <Text style={styles.warningText}>
+                  Your expenses exceed your income by {formatMoney(Math.abs(remaining))}. 
+                  Go back and reduce your spending to continue.
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.remainingContainer}>
+              <Ionicons name="checkmark-circle-outline" size={24} color="#34C759" />
+              <View style={styles.warningTextWrap}>
+                <Text style={styles.remainingTitle}>Budget Balanced</Text>
+                <Text style={styles.remainingText}>
+                  {formatMoney(remaining)} remaining for flexible spending
+                </Text>
+              </View>
+            </View>
+          )}
 
-          <Pressable style={styles.completeButton} onPress={handleComplete}>
+          <Pressable 
+            style={[styles.completeButton, isOverBudget && styles.completeButtonDisabled]} 
+            onPress={handleNext}
+            disabled={isOverBudget}
+          >
             <LinearGradient
-              colors={['#34C759', '#28A745']}
+              colors={isOverBudget ? ['#CBD5E1', '#94A3B8'] : ['#34C759', '#28A745']}
               style={styles.completeButtonGradient}
             >
               <Ionicons name="checkmark-circle" size={22} color="#FFF" />
-              <Text style={styles.completeButtonText}>Complete Setup</Text>
+              <Text style={styles.completeButtonText}>
+                {isOverBudget ? 'Adjust Budget to Continue' : 'Complete Setup'}
+              </Text>
             </LinearGradient>
           </Pressable>
 
@@ -1667,7 +1888,7 @@ export default function BudgetSetupWizard() {
         <StatusBar style="dark" />
         
         <KeyboardAvoidingView
-          style={styles.keyboardView}
+          style={[styles.keyboardView, { paddingBottom: insets.bottom + 10 }]}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           <View style={styles.header}>
@@ -1687,15 +1908,9 @@ export default function BudgetSetupWizard() {
 
 // ============ STYLES ============
 const styles = StyleSheet.create({
-  background: {
-    flex: 1,
-  },
-  safeArea: {
-    flex: 1,
-  },
-  keyboardView: {
-    flex: 1,
-  },
+  background: { flex: 1 },
+  safeArea: { flex: 1 },
+  keyboardView: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1704,32 +1919,22 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 8,
   },
-  headerBack: {
-    padding: 8,
-  },
+  headerBack: { padding: 8 },
   headerTitle: {
     fontSize: 18,
     fontFamily: FONTS.bold,
     color: COLORS.text,
     letterSpacing: -0.3,
   },
-  headerPlaceholder: {
-    width: 40,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  headerPlaceholder: { width: 40 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: {
     marginTop: 16,
     fontSize: 14,
     fontFamily: FONTS.semiBold,
     color: COLORS.muted,
   },
-  stepScroll: {
-    flex: 1,
-  },
+  stepScroll: { flex: 1 },
   questionCard: {
     flex: 1,
     margin: 20,
@@ -1743,9 +1948,7 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 6,
   },
-  progressContainer: {
-    marginBottom: 24,
-  },
+  progressContainer: { marginBottom: 24 },
   progressBarTrack: {
     height: 6,
     backgroundColor: '#E2E8F0',
@@ -1764,9 +1967,7 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     textAlign: 'right',
   },
-  questionHeader: {
-    marginBottom: 28,
-  },
+  questionHeader: { marginBottom: 28 },
   questionTitle: {
     fontSize: 28,
     fontFamily: FONTS.bold,
@@ -1780,14 +1981,8 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     lineHeight: 22,
   },
-  optionsGrid: {
-    gap: 12,
-    marginBottom: 20,
-  },
-  optionButton: {
-    borderRadius: 20,
-    overflow: 'hidden',
-  },
+  optionsGrid: { gap: 12, marginBottom: 20 },
+  optionButton: { borderRadius: 20, overflow: 'hidden' },
   optionButtonSelected: {
     shadowColor: COLORS.accent,
     shadowOffset: { width: 0, height: 4 },
@@ -1795,18 +1990,9 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  optionButtonPressed: {
-    opacity: 0.8,
-    transform: [{ scale: 0.98 }],
-  },
-  optionGradient: {
-    padding: 16,
-  },
-  optionContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
+  optionButtonPressed: { opacity: 0.8, transform: [{ scale: 0.98 }] },
+  optionGradient: { padding: 16 },
+  optionContent: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   optionIcon: {
     width: 44,
     height: 44,
@@ -1815,32 +2001,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  optionIconSelected: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-  },
-  optionTextWrap: {
-    flex: 1,
-  },
-  optionLabel: {
-    fontSize: 16,
-    fontFamily: FONTS.bold,
-    color: COLORS.text,
-  },
-  optionLabelSelected: {
-    color: '#FFF',
-  },
+  optionIconSelected: { backgroundColor: 'rgba(255,255,255,0.2)' },
+  optionTextWrap: { flex: 1 },
+  optionLabel: { fontSize: 16, fontFamily: FONTS.bold, color: COLORS.text },
+  optionLabelSelected: { color: '#FFF' },
   optionDescription: {
     fontSize: 12,
     fontFamily: FONTS.semiBold,
     color: COLORS.muted,
     marginTop: 2,
   },
-  optionDescriptionSelected: {
-    color: 'rgba(255,255,255,0.8)',
-  },
-  amountSection: {
-    marginTop: 20,
-  },
+  optionDescriptionSelected: { color: 'rgba(255,255,255,0.8)' },
+  amountSection: { marginTop: 20 },
   inputLabel: {
     fontSize: 11,
     fontFamily: FONTS.bold,
@@ -1863,10 +2035,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
-  amountFocused: {
-    borderColor: COLORS.accent,
-    borderWidth: 1.5,
-  },
+  amountFocused: { borderColor: COLORS.accent, borderWidth: 1.5 },
   amountPrefix: {
     fontSize: 20,
     fontFamily: FONTS.bold,
@@ -1879,13 +2048,6 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.semiBold,
     color: COLORS.text,
     paddingVertical: 12,
-  },
-  amountHint: {
-    fontSize: 12,
-    fontFamily: FONTS.semiBold,
-    color: COLORS.muted,
-    marginTop: 8,
-    textAlign: 'center',
   },
   navRow: {
     flexDirection: 'row',
@@ -1905,16 +2067,8 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     gap: 8,
   },
-  backButtonText: {
-    fontSize: 16,
-    fontFamily: FONTS.bold,
-    color: COLORS.accent,
-  },
-  nextButton: {
-    flex: 2,
-    overflow: 'hidden',
-    borderRadius: 28,
-  },
+  backButtonText: { fontSize: 16, fontFamily: FONTS.bold, color: COLORS.accent },
+  nextButton: { flex: 2, overflow: 'hidden', borderRadius: 28 },
   nextButtonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1922,11 +2076,7 @@ const styles = StyleSheet.create({
     height: 56,
     gap: 8,
   },
-  nextButtonText: {
-    fontSize: 16,
-    fontFamily: FONTS.bold,
-    color: '#FFF',
-  },
+  nextButtonText: { fontSize: 16, fontFamily: FONTS.bold, color: '#FFF' },
   incomeDisplay: {
     backgroundColor: 'rgba(71,85,105,0.08)',
     borderRadius: 20,
@@ -1934,26 +2084,15 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     alignItems: 'center',
   },
-  incomeDisplayLabel: {
-    fontSize: 12,
-    fontFamily: FONTS.semiBold,
-    color: COLORS.muted,
-  },
+  incomeDisplayLabel: { fontSize: 12, fontFamily: FONTS.semiBold, color: COLORS.muted },
   incomeDisplayAmount: {
     fontSize: 24,
     fontFamily: FONTS.bold,
     color: COLORS.text,
     marginTop: 4,
   },
-  extraIncomeSection: {
-    marginTop: 20,
-  },
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 8,
-  },
+  extraIncomeSection: { marginTop: 20 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 8 },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1965,18 +2104,9 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     gap: 6,
   },
-  chipSelected: {
-    backgroundColor: COLORS.accent,
-    borderColor: COLORS.accent,
-  },
-  chipText: {
-    fontSize: 13,
-    fontFamily: FONTS.semiBold,
-    color: COLORS.accent,
-  },
-  chipTextSelected: {
-    color: '#FFF',
-  },
+  chipSelected: { backgroundColor: COLORS.accent, borderColor: COLORS.accent },
+  chipText: { fontSize: 13, fontFamily: FONTS.semiBold, color: COLORS.accent },
+  chipTextSelected: { color: '#FFF' },
   totalDisplay: {
     marginTop: 24,
     paddingTop: 16,
@@ -1984,11 +2114,7 @@ const styles = StyleSheet.create({
     borderTopColor: '#E2E8F0',
     alignItems: 'center',
   },
-  totalDisplayLabel: {
-    fontSize: 14,
-    fontFamily: FONTS.semiBold,
-    color: COLORS.muted,
-  },
+  totalDisplayLabel: { fontSize: 14, fontFamily: FONTS.semiBold, color: COLORS.muted },
   totalDisplayAmount: {
     fontSize: 28,
     fontFamily: FONTS.bold,
@@ -2006,34 +2132,24 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     alignSelf: 'flex-start',
   },
-  incomeReminderText: {
-    fontSize: 13,
-    fontFamily: FONTS.semiBold,
-    color: COLORS.accent,
-  },
+  incomeReminderText: { fontSize: 13, fontFamily: FONTS.semiBold, color: COLORS.accent },
   subscriptionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
   },
-  subscriptionLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  subscriptionLabel: {
-    fontSize: 15,
+  subscriptionLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  subscriptionLabel: { fontSize: 15, fontFamily: FONTS.semiBold, color: COLORS.text },
+  subscriptionPrice: {
+    fontSize: 11,
     fontFamily: FONTS.semiBold,
-    color: COLORS.text,
+    color: COLORS.muted,
+    marginTop: 2,
   },
-  subscriptionRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
+  subscriptionRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   subscriptionAmount: {
     width: 70,
     height: 40,
@@ -2047,20 +2163,32 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     paddingHorizontal: 8,
   },
-  savingsContainer: {
-    alignItems: 'center',
-    paddingVertical: 20,
+  subscriptionAmountDisabled: {
+    backgroundColor: '#F1F5F9',
+    color: '#94A3B8',
   },
-  savingsPercentage: {
-    fontSize: 48,
-    fontFamily: FONTS.bold,
-    color: COLORS.accent,
-  },
+  savingsContainer: { alignItems: 'center', paddingVertical: 20 },
+  savingsPercentage: { fontSize: 48, fontFamily: FONTS.bold, color: COLORS.accent },
   savingsAmount: {
     fontSize: 16,
     fontFamily: FONTS.semiBold,
     color: COLORS.muted,
     marginTop: 8,
+  },
+  savingsInfoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(71,85,105,0.08)',
+    borderRadius: 16,
+    padding: 14,
+    marginTop: 20,
+    gap: 10,
+  },
+  savingsInfoText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.text,
   },
   sliderContainer: {
     flexDirection: 'row',
@@ -2069,22 +2197,18 @@ const styles = StyleSheet.create({
     marginTop: 24,
     width: '100%',
   },
-  sliderLabel: {
-    fontSize: 12,
-    fontFamily: FONTS.semiBold,
-    color: COLORS.muted,
-  },
+  sliderLabel: { fontSize: 12, fontFamily: FONTS.semiBold, color: COLORS.muted },
   sliderTrack: {
     flex: 1,
-    height: 6,
+    height: 8,
     backgroundColor: '#E2E8F0',
-    borderRadius: 3,
+    borderRadius: 4,
     overflow: 'hidden',
   },
   sliderFill: {
     height: '100%',
     backgroundColor: COLORS.accent,
-    borderRadius: 3,
+    borderRadius: 4,
   },
   percentageButtons: {
     flexDirection: 'row',
@@ -2101,18 +2225,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  percentageButtonSelected: {
-    backgroundColor: COLORS.accent,
-    borderColor: COLORS.accent,
-  },
-  percentageButtonText: {
-    fontSize: 14,
-    fontFamily: FONTS.bold,
-    color: COLORS.accent,
-  },
-  percentageButtonTextSelected: {
-    color: '#FFF',
-  },
+  percentageButtonSelected: { backgroundColor: COLORS.accent, borderColor: COLORS.accent },
+  percentageButtonText: { fontSize: 14, fontFamily: FONTS.bold, color: COLORS.accent },
+  percentageButtonTextSelected: { color: '#FFF' },
   infoCard: {
     flexDirection: 'row',
     backgroundColor: 'rgba(52,199,89,0.08)',
@@ -2121,25 +2236,15 @@ const styles = StyleSheet.create({
     marginTop: 20,
     gap: 12,
   },
-  infoCardText: {
-    flex: 1,
-  },
-  infoCardTitle: {
-    fontSize: 14,
-    fontFamily: FONTS.bold,
-    color: COLORS.text,
-  },
+  infoCardText: { flex: 1 },
+  infoCardTitle: { fontSize: 14, fontFamily: FONTS.bold, color: COLORS.text },
   infoCardDescription: {
     fontSize: 12,
     fontFamily: FONTS.semiBold,
     color: COLORS.muted,
     marginTop: 4,
   },
-  strategyCard: {
-    borderRadius: 20,
-    marginBottom: 12,
-    overflow: 'hidden',
-  },
+  strategyCard: { borderRadius: 20, marginBottom: 12, overflow: 'hidden' },
   strategyCardSelected: {
     shadowColor: COLORS.accent,
     shadowOffset: { width: 0, height: 4 },
@@ -2147,12 +2252,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  strategyGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    gap: 16,
-  },
+  strategyGradient: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 16 },
   strategyIcon: {
     width: 52,
     height: 52,
@@ -2161,74 +2261,57 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  strategyContent: {
-    flex: 1,
-  },
-  strategyName: {
-    fontSize: 16,
-    fontFamily: FONTS.bold,
-    color: COLORS.text,
-  },
-  strategyNameSelected: {
-    color: '#FFF',
-  },
+  strategyContent: { flex: 1 },
+  strategyName: { fontSize: 16, fontFamily: FONTS.bold, color: COLORS.text },
+  strategyNameSelected: { color: '#FFF' },
   strategyDescription: {
     fontSize: 13,
     fontFamily: FONTS.semiBold,
     color: COLORS.muted,
     marginTop: 2,
   },
-  strategyDescriptionSelected: {
-    color: 'rgba(255,255,255,0.8)',
-  },
+  strategyDescriptionSelected: { color: 'rgba(255,255,255,0.8)' },
   strategyDetail: {
     fontSize: 11,
     fontFamily: FONTS.semiBold,
     color: COLORS.muted,
     marginTop: 4,
   },
-  strategyDetailSelected: {
-    color: 'rgba(255,255,255,0.7)',
-  },
-  summaryHeader: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  summaryIncome: {
-    fontSize: 14,
-    fontFamily: FONTS.semiBold,
-    color: COLORS.muted,
-  },
+  strategyDetailSelected: { color: 'rgba(255,255,255,0.7)' },
+  summaryHeader: { alignItems: 'center', marginBottom: 20 },
+  summaryIncome: { fontSize: 14, fontFamily: FONTS.semiBold, color: COLORS.muted },
   summaryIncomeAmount: {
     fontSize: 32,
     fontFamily: FONTS.bold,
     color: COLORS.positive,
     marginTop: 4,
   },
-  summaryDivider: {
-    height: 1,
-    backgroundColor: '#E2E8F0',
-    marginVertical: 16,
+  summarySectionTitle: {
+    fontSize: 13,
+    fontFamily: FONTS.bold,
+    color: COLORS.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 12,
   },
-  summaryCategories: {
-    gap: 12,
-  },
+  summaryDivider: { height: 1, backgroundColor: '#E2E8F0', marginVertical: 16 },
+  summaryCategories: { gap: 4 },
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 10,
   },
-  summaryCategory: {
-    fontSize: 15,
-    fontFamily: FONTS.semiBold,
-    color: COLORS.text,
+  summaryRowBold: {
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    marginTop: 8,
+    paddingTop: 14,
   },
-  summaryAmount: {
-    fontSize: 15,
-    fontFamily: FONTS.bold,
-    color: COLORS.text,
-  },
+  summaryCategory: { fontSize: 15, fontFamily: FONTS.semiBold, color: COLORS.text },
+  summaryCategoryBold: { fontSize: 16, fontFamily: FONTS.bold, color: COLORS.text },
+  summaryAmount: { fontSize: 15, fontFamily: FONTS.bold, color: COLORS.text },
+  summaryAmountBold: { fontSize: 16, fontFamily: FONTS.bold, color: COLORS.accent },
   summaryTotal: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -2236,38 +2319,52 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 16,
   },
-  summaryTotalLabel: {
-    fontSize: 16,
-    fontFamily: FONTS.bold,
-    color: COLORS.text,
-  },
-  summaryTotalAmount: {
-    fontSize: 18,
-    fontFamily: FONTS.bold,
-    color: COLORS.accent,
-  },
-  remainingContainer: {
+  summaryTotalLabel: { fontSize: 16, fontFamily: FONTS.bold, color: COLORS.text },
+  summaryTotalAmount: { fontSize: 18, fontFamily: FONTS.bold, color: COLORS.accent },
+  warningContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(52,199,89,0.12)',
+    backgroundColor: 'rgba(239,68,68,0.1)',
     borderRadius: 16,
     padding: 16,
     gap: 12,
-    marginTop: 20,
-    marginBottom: 20,
+    marginBottom: 16,
   },
-  remainingText: {
-    flex: 1,
+  warningTextWrap: { flex: 1 },
+  warningTitle: {
+    fontSize: 15,
+    fontFamily: FONTS.bold,
+    color: COLORS.negative,
+    marginBottom: 4,
+  },
+  warningText: {
     fontSize: 13,
     fontFamily: FONTS.semiBold,
     color: COLORS.text,
     lineHeight: 18,
   },
-  completeButton: {
-    borderRadius: 28,
-    overflow: 'hidden',
-    marginTop: 8,
+  remainingContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: 'rgba(52,199,89,0.1)',
+    borderRadius: 16,
+    padding: 16,
+    gap: 12,
+    marginBottom: 16,
   },
+  remainingTitle: {
+    fontSize: 15,
+    fontFamily: FONTS.bold,
+    color: COLORS.positive,
+    marginBottom: 4,
+  },
+  remainingText: {
+    fontSize: 13,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.text,
+    lineHeight: 18,
+  },
+  completeButton: { borderRadius: 28, overflow: 'hidden' },
+  completeButtonDisabled: { opacity: 0.6 },
   completeButtonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2275,11 +2372,7 @@ const styles = StyleSheet.create({
     height: 56,
     gap: 10,
   },
-  completeButtonText: {
-    fontSize: 16,
-    fontFamily: FONTS.bold,
-    color: '#FFF',
-  },
+  completeButtonText: { fontSize: 16, fontFamily: FONTS.bold, color: '#FFF' },
   backButtonFull: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2288,9 +2381,5 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 12,
   },
-  backButtonFullText: {
-    fontSize: 14,
-    fontFamily: FONTS.semiBold,
-    color: COLORS.muted,
-  },
+  backButtonFullText: { fontSize: 14, fontFamily: FONTS.semiBold, color: COLORS.muted },
 });
