@@ -10,6 +10,9 @@ import ScholarshipScreen from '../screens/Scholarships/ScholarshipScreen';
 import ScholarshipDetailsScreen from '../screens/Scholarships/ScholarshipDetailsScreen';
 import FundingTrackerScreen from '../screens/Scholarships/FundingTrackerScreen';
 
+// Academics screens
+import ModuleGradesTableScreen from '../screens/Academics/ModuleGradesTableScreen';
+
 // Profile screens
 import ProfileScreen from '../screens/Profile/ProfileScreen';
 import EditProfileScreen from '../screens/Profile/EditProfileScreen';
@@ -28,13 +31,16 @@ export default function AppNavigator() {
       {/* Main Tab Navigator */}
       <Stack.Screen name="Tabs" component={BottomTabs} />
 
-      {/* Budget & Scholarship direct screens */}
+      {/* Academics screens */}
+      <Stack.Screen name="ModuleGradesTable" component={ModuleGradesTableScreen} />
+
+      {/* Budget & Scholarship screens */}
       <Stack.Screen name="Budget" component={BudgetScreen} />
       <Stack.Screen name="Scholarships" component={ScholarshipScreen} />
       <Stack.Screen name="ScholarshipDetails" component={ScholarshipDetailsScreen} />
       <Stack.Screen name="FundingTracker" component={FundingTrackerScreen} />
 
-      {/* Profile section */}
+      {/* Profile screens */}
       <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
