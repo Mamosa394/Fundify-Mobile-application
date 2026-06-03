@@ -24,6 +24,13 @@ import BudgetScreen from '../screens/Budget/BudgetScreen';
 import ScholarshipScreen from '../screens/Scholarships/ScholarshipScreen';
 import ProfileScreen from '../screens/Profile/ProfileScreen';
 
+// Budget sub-screens (hidden from tab bar but accessible via navigation)
+import BudgetSetupWizard from '../screens/Budget/BudgetSetupWizard';
+import ExpenseDetailScreen from '../screens/Budget/ExpenseDetailScreen';
+import AddExpenseModal from '../screens/Budget/AddExpenseModal';
+import AIAdvisorScreen from '../screens/Budget/AIAdvisorScreen';
+import NotificationScreen from '../screens/Notifications/NotificationScreen';
+
 // Academics sub‑screens (Planner)
 import AcademicScreen from '../screens/Academics/AcademicScreen';
 import AssignmentScreen from '../screens/Academics/AssignmentScreen';
@@ -197,6 +204,9 @@ function CustomTabBar({ state, navigation }) {
 
   const dynamicBottomInset = Math.max(insets.bottom, 16);
 
+  // Filter routes to only show the 5 main tabs in the tab bar
+  const mainTabRoutes = ['Home', 'Budget', 'Scholarships', 'Planner', 'Profile'];
+
   return (
     <View style={[bottomStyles.wrapper, { bottom: dynamicBottomInset }]}>
       <View 
@@ -210,34 +220,36 @@ function CustomTabBar({ state, navigation }) {
           }
         ]}
       >
-        {state.routes.map((route, index) => {
-          const isFocused = state.index === index;
-          const config = NAV_CONFIG[route.name] || { icon: Home, label: route.name };
+        {state.routes
+          .filter(route => mainTabRoutes.includes(route.name))
+          .map((route, index) => {
+            const isFocused = state.index === state.routes.findIndex(r => r.key === route.key);
+            const config = NAV_CONFIG[route.name] || { icon: Home, label: route.name };
 
-          const handlePress = useCallback(() => {
-            const event = navigation.emit({
-              type: 'tabPress',
-              target: route.key,
-              canPreventDefault: true,
-            });
+            const handlePress = useCallback(() => {
+              const event = navigation.emit({
+                type: 'tabPress',
+                target: route.key,
+                canPreventDefault: true,
+              });
 
-            if (!isFocused && !event.defaultPrevented) {
-              navigation.navigate(route.name);
-            }
-          }, [isFocused, navigation, route.key, route.name]);
+              if (!isFocused && !event.defaultPrevented) {
+                navigation.navigate(route.name);
+              }
+            }, [isFocused, navigation, route.key, route.name]);
 
-          return (
-            <TabItem
-              key={route.key}
-              isFocused={isFocused}
-              onPress={handlePress}
-              icon={config.icon}
-              label={config.label}
-              isHome={config.isHome}
-              colors={colors}
-            />
-          );
-        })}
+            return (
+              <TabItem
+                key={route.key}
+                isFocused={isFocused}
+                onPress={handlePress}
+                icon={config.icon}
+                label={config.label}
+                isHome={config.isHome}
+                colors={colors}
+              />
+            );
+          })}
       </View>
     </View>
   );
@@ -259,6 +271,48 @@ export default function BottomTabs() {
       <Tab.Screen name="Scholarships" component={ScholarshipScreen} />
       <Tab.Screen name="Planner" component={PlannerTabs} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
+      
+      {/* Budget sub-screens - hidden from tab bar, accessible via navigation */}
+      <Tab.Screen 
+        name="BudgetSetupWizard" 
+        component={BudgetSetupWizard}
+        options={{
+          tabBarButton: () => null, // Hide from tab bar
+          tabBarStyle: { display: 'none' }, // Hide tab bar when on this screen
+        }}
+      />
+      <Tab.Screen 
+        name="ExpenseDetail" 
+        component={ExpenseDetailScreen}
+        options={{
+          tabBarButton: () => null, // Hide from tab bar
+          tabBarStyle: { display: 'none' }, // Hide tab bar when on this screen
+        }}
+      />
+      <Tab.Screen 
+        name="AddExpenseModal" 
+        component={AddExpenseModal}
+        options={{
+          tabBarButton: () => null, // Hide from tab bar
+          tabBarStyle: { display: 'none' }, // Hide tab bar when on this screen
+        }}
+      />
+      <Tab.Screen 
+        name="AIAdvisor" 
+        component={AIAdvisorScreen}
+        options={{
+          tabBarButton: () => null, // Hide from tab bar
+          tabBarStyle: { display: 'none' }, // Hide tab bar when on this screen
+        }}
+      />
+      <Tab.Screen 
+        name="NotificationSettings" 
+        component={NotificationScreen}
+        options={{
+          tabBarButton: () => null, // Hide from tab bar
+          tabBarStyle: { display: 'none' }, // Hide tab bar when on this screen
+        }}
+      />
     </Tab.Navigator>
   );
 }

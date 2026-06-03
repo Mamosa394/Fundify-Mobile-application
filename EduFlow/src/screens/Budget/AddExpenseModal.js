@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { auth } from '../../services/firebase';
 import { addExpense, BUDGET_CATEGORIES, getCurrentBudget } from '../../services/budgetService';
 
@@ -67,6 +68,7 @@ export default function AddExpenseScreen({ navigation, route }) {
   
   const slideAnim = useRef(new Animated.Value(height)).current;
   const backdropAnim = useRef(new Animated.Value(0)).current;
+  const insets = useSafeAreaInsets();
   
   useEffect(() => {
     // Animate in
@@ -224,6 +226,7 @@ export default function AddExpenseScreen({ navigation, route }) {
           styles.bottomSheet,
           {
             transform: [{ translateY: slideAnim }],
+            paddingBottom: insets.bottom + 80, // Added to prevent tab bar overlap
           },
         ]}
       >
@@ -246,7 +249,10 @@ export default function AddExpenseScreen({ navigation, route }) {
           >
             <ScrollView
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.scrollContent}
+              contentContainerStyle={[
+                styles.scrollContent,
+                { paddingBottom: insets.bottom + 40 } // Extra padding at bottom of scroll
+              ]}
             >
               {/* Amount Section */}
               <View style={styles.amountSection}>
