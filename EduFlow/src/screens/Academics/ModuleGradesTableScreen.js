@@ -1,6 +1,6 @@
 // src/screens/Academics/ModuleGradesTableScreen.js
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Platform,
   ActivityIndicator,
   Dimensions,
+  RefreshControl,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronLeft, FileText, ClipboardList, Calendar } from 'lucide-react-native';
@@ -48,17 +49,36 @@ const GRADE_THRESHOLDS = [
 
 const ModuleGradesTableScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
-  const { modules, fetchModules, fetchAnalytics } = useAcademicStore();
+  const [refreshing, setRefreshing] = useState(false);
+  
+  // Subscribe to the store directly so it re-renders when data changes
+  const modules = useAcademicStore((state) => state.modules);
+  const fetchModules = useAcademicStore((state) => state.fetchModules);
+  const fetchAnalytics = useAcademicStore((state) => state.fetchAnalytics);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  // Re-fetch when screen comes into focus
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadData();
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   const loadData = async () => {
     setLoading(true);
     await Promise.all([fetchModules(), fetchAnalytics()]);
     setLoading(false);
   };
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  }, []);
 
   const getGradeColor = (grade) => GRADE_COLORS[grade] || COLORS.textMuted;
 
@@ -67,19 +87,6 @@ const ModuleGradesTableScreen = ({ navigation }) => {
     return values[grade] || 0;
   };
 
-  const getGradeFromPoints = (points) => {
-    if (points >= 3.85) return 'A+';
-    if (points >= 3.50) return 'A';
-    if (points >= 3.15) return 'A-';
-    if (points >= 2.85) return 'B+';
-    if (points >= 2.50) return 'B';
-    if (points >= 2.15) return 'B-';
-    if (points >= 1.85) return 'C+';
-    if (points >= 1.50) return 'C';
-    return 'F';
-  };
-
-  // Calculate auto-grade from marks
   const calculateAutoGrade = (marksObtained, totalMarks) => {
     if (!marksObtained || !totalMarks || totalMarks === 0) return null;
     const percentage = (marksObtained / totalMarks) * 100;
@@ -87,11 +94,9 @@ const ModuleGradesTableScreen = ({ navigation }) => {
     return threshold ? threshold.grade : 'F';
   };
 
-  // Calculate weighted average from items (assignments + assessments)
   const calculateWeightedAverage = (items) => {
     if (!items || items.length === 0) return null;
     
-    // Use gradeObtained if available, otherwise calculate from marks
     const graded = items.filter(item => {
       const grade = item.gradeObtained || calculateAutoGrade(item.marksObtained, item.totalMarks);
       return grade && grade !== 'PP' && grade !== 'F';
@@ -110,22 +115,23 @@ const ModuleGradesTableScreen = ({ navigation }) => {
     return (weightedSum / totalWeight).toFixed(1);
   };
 
-  // Get display grade for an item
   const getDisplayGrade = (item) => {
     if (item.gradeObtained) return item.gradeObtained;
     if (item.marksObtained && item.totalMarks) {
-      return calculateAutoGrade(item.marksObtained, item.totalMarks) || '-';
+      return calculateAutoGrade(item.marksObtained, item.totalMarks) || null;
     }
     return null;
   };
 
-  if (loading) {
+  if (loading && !refreshing) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.primary} />
       </View>
     );
   }
+
+  const modulesList = modules || [];
 
   return (
     <LinearGradient colors={[COLORS.bgStart, COLORS.bgMid, COLORS.bgEnd]} style={styles.container}>
@@ -137,137 +143,144 @@ const ModuleGradesTableScreen = ({ navigation }) => {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {modules.map((mod) => {
-          const assessments = mod.assessments || [];
-          const assignments = mod.assignments || [];
-          
-          // Combine all items for overall average
-          const allItems = [...assignments, ...assessments];
-          const overallAvg = calculateWeightedAverage(allItems);
-          
-          return (
-            <View key={mod.id} style={styles.moduleCard}>
-              {/* Module Header */}
-              <View style={styles.moduleHeader}>
-                <View style={[styles.moduleDot, { backgroundColor: mod.color }]} />
-                <View style={styles.moduleInfo}>
-                  <Text style={styles.moduleName}>{mod.moduleName}</Text>
-                  <Text style={styles.moduleCode}>{mod.moduleCode} • {mod.credits} credits</Text>
-                </View>
-                <View style={styles.moduleGrade}>
-                  <Text style={styles.moduleGradeLabel}>Grade</Text>
-                  <Text style={[styles.moduleGradeValue, { color: getGradeColor(mod.currentGrade) }]}>{mod.currentGrade || 'N/A'}</Text>
-                </View>
-                {overallAvg && (
-                  <View style={styles.moduleAvg}>
-                    <Text style={styles.moduleAvgLabel}>Avg</Text>
-                    <Text style={styles.moduleAvgValue}>{overallAvg}</Text>
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}
+        contentContainerStyle={styles.scrollContent}
+      >
+        {modulesList.length === 0 ? (
+          <View style={styles.emptyState}>
+            <FileText size={48} color={COLORS.textMuted} />
+            <Text style={styles.emptyTitle}>No modules found</Text>
+            <Text style={styles.emptySub}>Add modules with assignments and assessments to see grades here</Text>
+          </View>
+        ) : (
+          modulesList.map((mod) => {
+            const assessments = mod.assessments || [];
+            const assignments = mod.assignments || [];
+            const allItems = [...assignments, ...assessments];
+            const overallAvg = calculateWeightedAverage(allItems);
+            
+            return (
+              <View key={mod.id} style={styles.moduleCard}>
+                {/* Module Header */}
+                <View style={styles.moduleHeader}>
+                  <View style={[styles.moduleDot, { backgroundColor: mod.color }]} />
+                  <View style={styles.moduleInfo}>
+                    <Text style={styles.moduleName}>{mod.moduleName}</Text>
+                    <Text style={styles.moduleCode}>{mod.moduleCode} • {mod.credits} credits</Text>
                   </View>
+                  <View style={styles.moduleGrade}>
+                    <Text style={styles.moduleGradeLabel}>Grade</Text>
+                    <Text style={[styles.moduleGradeValue, { color: getGradeColor(mod.currentGrade) }]}>{mod.currentGrade || 'N/A'}</Text>
+                  </View>
+                  {overallAvg && (
+                    <View style={styles.moduleAvg}>
+                      <Text style={styles.moduleAvgLabel}>Avg</Text>
+                      <Text style={styles.moduleAvgValue}>{overallAvg}</Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* ASSIGNMENTS TABLE */}
+                <View style={styles.sectionHeader}>
+                  <ClipboardList size={14} color={COLORS.primary} />
+                  <Text style={styles.sectionTitle}>Assignments</Text>
+                  <Text style={styles.sectionCount}>{assignments.length}</Text>
+                </View>
+
+                {assignments.length === 0 ? (
+                  <View style={styles.emptyRow}>
+                    <FileText size={14} color={COLORS.textMuted} />
+                    <Text style={styles.emptyText}>No assignments recorded</Text>
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.tableHeader}>
+                      <Text style={[styles.tableHeaderText, styles.colName]}>Title</Text>
+                      <Text style={[styles.tableHeaderText, styles.colStatus]}>Status</Text>
+                      <Text style={[styles.tableHeaderText, styles.colMarks]}>Marks</Text>
+                      <Text style={[styles.tableHeaderText, styles.colWeight]}>Wt%</Text>
+                      <Text style={[styles.tableHeaderText, styles.colGrade]}>Grade</Text>
+                    </View>
+                    {assignments.map((a, i) => {
+                      const displayGrade = getDisplayGrade(a);
+                      return (
+                        <View key={a.id || i} style={[styles.tableRow, i % 2 === 0 && styles.tableRowAlt]}>
+                          <Text style={[styles.tableCell, styles.colName]} numberOfLines={1}>{a.title || 'Untitled'}</Text>
+                          <View style={[styles.tableCell, styles.colStatus]}>
+                            <View style={[styles.statusDot, { backgroundColor: a.status === 'completed' ? COLORS.success : a.status === 'overdue' ? COLORS.danger : COLORS.warning }]} />
+                            <Text style={styles.statusText}>{a.status || 'pending'}</Text>
+                          </View>
+                          <Text style={[styles.tableCell, styles.colMarks]}>
+                            {a.marksObtained != null ? `${a.marksObtained}/${a.totalMarks || 100}` : '-'}
+                          </Text>
+                          <Text style={[styles.tableCell, styles.colWeight]}>{a.weightPercentage || 0}%</Text>
+                          <View style={[styles.tableCell, styles.colGrade]}>
+                            {displayGrade ? (
+                              <View style={[styles.miniBadge, { backgroundColor: getGradeColor(displayGrade) + '20' }]}>
+                                <Text style={[styles.miniBadgeText, { color: getGradeColor(displayGrade) }]}>{displayGrade}</Text>
+                              </View>
+                            ) : (
+                              <Text style={styles.pendingText}>-</Text>
+                            )}
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </>
+                )}
+
+                {/* ASSESSMENTS TABLE */}
+                <View style={[styles.sectionHeader, { marginTop: 16 }]}>
+                  <Calendar size={14} color={COLORS.accent} />
+                  <Text style={[styles.sectionTitle, { color: COLORS.accent }]}>Assessments</Text>
+                  <Text style={styles.sectionCount}>{assessments.length}</Text>
+                </View>
+
+                {assessments.length === 0 ? (
+                  <View style={styles.emptyRow}>
+                    <FileText size={14} color={COLORS.textMuted} />
+                    <Text style={styles.emptyText}>No assessments recorded</Text>
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.tableHeader}>
+                      <Text style={[styles.tableHeaderText, styles.colName]}>Title</Text>
+                      <Text style={[styles.tableHeaderText, styles.colType]}>Type</Text>
+                      <Text style={[styles.tableHeaderText, styles.colMarks]}>Marks</Text>
+                      <Text style={[styles.tableHeaderText, styles.colWeight]}>Wt%</Text>
+                      <Text style={[styles.tableHeaderText, styles.colGrade]}>Grade</Text>
+                    </View>
+                    {assessments.map((a, i) => {
+                      const displayGrade = getDisplayGrade(a);
+                      return (
+                        <View key={a.id || i} style={[styles.tableRow, i % 2 === 0 && styles.tableRowAlt]}>
+                          <Text style={[styles.tableCell, styles.colName]} numberOfLines={1}>{a.title || 'Untitled'}</Text>
+                          <Text style={[styles.tableCell, styles.colType]}>{a.type || 'exam'}</Text>
+                          <Text style={[styles.tableCell, styles.colMarks]}>
+                            {a.marksObtained != null ? `${a.marksObtained}/${a.totalMarks || 100}` : '-'}
+                          </Text>
+                          <Text style={[styles.tableCell, styles.colWeight]}>{a.weightPercentage || 0}%</Text>
+                          <View style={[styles.tableCell, styles.colGrade]}>
+                            {displayGrade ? (
+                              <View style={[styles.miniBadge, { backgroundColor: getGradeColor(displayGrade) + '20' }]}>
+                                <Text style={[styles.miniBadgeText, { color: getGradeColor(displayGrade) }]}>{displayGrade}</Text>
+                              </View>
+                            ) : (
+                              <Text style={styles.pendingText}>-</Text>
+                            )}
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </>
                 )}
               </View>
-
-              {/* ============================================ */}
-              {/* ASSIGNMENTS TABLE */}
-              {/* ============================================ */}
-              <View style={styles.sectionHeader}>
-                <ClipboardList size={14} color={COLORS.primary} />
-                <Text style={styles.sectionTitle}>Assignments</Text>
-                <Text style={styles.sectionCount}>{assignments.length}</Text>
-              </View>
-
-              {assignments.length === 0 ? (
-                <View style={styles.emptyRow}>
-                  <FileText size={14} color={COLORS.textMuted} />
-                  <Text style={styles.emptyText}>No assignments recorded</Text>
-                </View>
-              ) : (
-                <>
-                  <View style={styles.tableHeader}>
-                    <Text style={[styles.tableHeaderText, styles.colName]}>Title</Text>
-                    <Text style={[styles.tableHeaderText, styles.colStatus]}>Status</Text>
-                    <Text style={[styles.tableHeaderText, styles.colMarks]}>Marks</Text>
-                    <Text style={[styles.tableHeaderText, styles.colWeight]}>Wt%</Text>
-                    <Text style={[styles.tableHeaderText, styles.colGrade]}>Grade</Text>
-                  </View>
-                  {assignments.map((a, i) => {
-                    const displayGrade = getDisplayGrade(a);
-                    return (
-                      <View key={a.id || i} style={[styles.tableRow, i % 2 === 0 && styles.tableRowAlt]}>
-                        <Text style={[styles.tableCell, styles.colName]} numberOfLines={1}>{a.title || 'Untitled'}</Text>
-                        <View style={[styles.tableCell, styles.colStatus]}>
-                          <View style={[styles.statusDot, { backgroundColor: a.status === 'completed' ? COLORS.success : a.status === 'overdue' ? COLORS.danger : COLORS.warning }]} />
-                          <Text style={styles.statusText}>{a.status || 'pending'}</Text>
-                        </View>
-                        <Text style={[styles.tableCell, styles.colMarks]}>
-                          {a.marksObtained != null ? `${a.marksObtained}/${a.totalMarks || 100}` : '-'}
-                        </Text>
-                        <Text style={[styles.tableCell, styles.colWeight]}>{a.weightPercentage || 0}%</Text>
-                        <View style={[styles.tableCell, styles.colGrade]}>
-                          {displayGrade ? (
-                            <View style={[styles.miniBadge, { backgroundColor: getGradeColor(displayGrade) + '20' }]}>
-                              <Text style={[styles.miniBadgeText, { color: getGradeColor(displayGrade) }]}>{displayGrade}</Text>
-                            </View>
-                          ) : (
-                            <Text style={styles.pendingText}>-</Text>
-                          )}
-                        </View>
-                      </View>
-                    );
-                  })}
-                </>
-              )}
-
-              {/* ============================================ */}
-              {/* ASSESSMENTS (EXAMS) TABLE */}
-              {/* ============================================ */}
-              <View style={[styles.sectionHeader, { marginTop: 16 }]}>
-                <Calendar size={14} color={COLORS.accent} />
-                <Text style={[styles.sectionTitle, { color: COLORS.accent }]}>Assessments</Text>
-                <Text style={styles.sectionCount}>{assessments.length}</Text>
-              </View>
-
-              {assessments.length === 0 ? (
-                <View style={styles.emptyRow}>
-                  <FileText size={14} color={COLORS.textMuted} />
-                  <Text style={styles.emptyText}>No assessments recorded</Text>
-                </View>
-              ) : (
-                <>
-                  <View style={styles.tableHeader}>
-                    <Text style={[styles.tableHeaderText, styles.colName]}>Title</Text>
-                    <Text style={[styles.tableHeaderText, styles.colType]}>Type</Text>
-                    <Text style={[styles.tableHeaderText, styles.colMarks]}>Marks</Text>
-                    <Text style={[styles.tableHeaderText, styles.colWeight]}>Wt%</Text>
-                    <Text style={[styles.tableHeaderText, styles.colGrade]}>Grade</Text>
-                  </View>
-                  {assessments.map((a, i) => {
-                    const displayGrade = getDisplayGrade(a);
-                    return (
-                      <View key={a.id || i} style={[styles.tableRow, i % 2 === 0 && styles.tableRowAlt]}>
-                        <Text style={[styles.tableCell, styles.colName]} numberOfLines={1}>{a.title || 'Untitled'}</Text>
-                        <Text style={[styles.tableCell, styles.colType]}>{a.type || 'exam'}</Text>
-                        <Text style={[styles.tableCell, styles.colMarks]}>
-                          {a.marksObtained != null ? `${a.marksObtained}/${a.totalMarks || 100}` : '-'}
-                        </Text>
-                        <Text style={[styles.tableCell, styles.colWeight]}>{a.weightPercentage || 0}%</Text>
-                        <View style={[styles.tableCell, styles.colGrade]}>
-                          {displayGrade ? (
-                            <View style={[styles.miniBadge, { backgroundColor: getGradeColor(displayGrade) + '20' }]}>
-                              <Text style={[styles.miniBadgeText, { color: getGradeColor(displayGrade) }]}>{displayGrade}</Text>
-                            </View>
-                          ) : (
-                            <Text style={styles.pendingText}>-</Text>
-                          )}
-                        </View>
-                      </View>
-                    );
-                  })}
-                </>
-              )}
-            </View>
-          );
-        })}
+            );
+          })
+        )}
 
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -283,6 +296,9 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 20, fontFamily: 'JosefinSans-Bold', color: COLORS.text },
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingTop: 4 },
+  emptyState: { alignItems: 'center', paddingTop: 80 },
+  emptyTitle: { fontSize: 18, fontFamily: 'JosefinSans-Bold', color: COLORS.text, marginTop: 16 },
+  emptySub: { fontSize: 13, color: COLORS.textSecondary, fontFamily: 'JosefinSans-SemiBold', marginTop: 4, textAlign: 'center', paddingHorizontal: 40 },
 
   moduleCard: { backgroundColor: COLORS.surface, borderRadius: 16, padding: 16, marginBottom: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2 },
   moduleHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: COLORS.surfaceAlt },
