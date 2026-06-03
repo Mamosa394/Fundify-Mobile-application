@@ -23,19 +23,26 @@ import {
   ChevronRight,
   AlertTriangle,
   TrendingUp,
-  BookOpen
+  BookOpen,
+  Bell,
+  Calendar,
+  Clock,
 } from 'lucide-react-native';
 import useAcademicStore from '../../store/academicStore';
 import GradeSimulationModal from './components/GradeSimulationModal';
+import { 
+  scheduleExamReminder, 
+  scheduleExamDayReminder,
+  sendGPAAlert 
+} from '../../services/notificationService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-//  SIZE MODEL
 const MODEL_CONFIG = {
-  scale: 20,               
-  position: [0, -30.2, 0],     
-  cameraPos: [0, 0.8, 3.2],   
-  cameraFov: 30,             
+  scale: 20,
+  position: [0, -30.2, 0],
+  cameraPos: [0, 0.8, 3.2],
+  cameraFov: 30,
 };
 
 const COLORS = {
@@ -81,9 +88,7 @@ function DeskModel() {
   useFrame((state) => {
     const t = state.clock.getElapsedTime();
     if (groupRef.current) {
-      // Subtle rotation around the center axis
       groupRef.current.rotation.y = Math.sin(t * 0.15) * 0.1;
-      // Hovering movement applied safely relative to your configured base position
       groupRef.current.position.y = MODEL_CONFIG.position[1] + (Math.sin(t * 0.4) * 0.04);
     }
   });
@@ -101,11 +106,10 @@ function DeskModel() {
 }
 
 function GPARing({ gpa, targetGPA, size = 180 }) {
-  const strokeWidth = 14; 
+  const strokeWidth = 14;
   const radius = (size - strokeWidth) / 2;
   const center = size / 2;
   const circumference = radius * 2 * Math.PI;
-  
   const gpaProgress = Math.min(gpa / 4.0, 1);
   const targetProgress = targetGPA / 4.0;
   const gpaOffset = circumference - (gpaProgress * circumference);
@@ -115,15 +119,8 @@ function GPARing({ gpa, targetGPA, size = 180 }) {
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       <Svg width={size} height={size}>
         <SvgCircle cx={center} cy={center} r={radius} stroke={COLORS.surfaceAlt} strokeWidth={strokeWidth} fill="transparent" />
-        <SvgCircle
-          cx={center} cy={center} r={radius} stroke={ringColor} strokeWidth={strokeWidth} fill="transparent"
-          strokeDasharray={`${circumference} ${circumference}`} strokeDashoffset={gpaOffset} strokeLinecap="round" rotation="-90" origin={`${center}, ${center}`}
-        />
-        <SvgCircle
-          cx={center + radius * Math.cos(((targetProgress * 360) - 90) * Math.PI / 180)}
-          cy={center + radius * Math.sin(((targetProgress * 360) - 90) * Math.PI / 180)}
-          r={7} fill={COLORS.accent} stroke={COLORS.white} strokeWidth={2.5}
-        />
+        <SvgCircle cx={center} cy={center} r={radius} stroke={ringColor} strokeWidth={strokeWidth} fill="transparent" strokeDasharray={`${circumference} ${circumference}`} strokeDashoffset={gpaOffset} strokeLinecap="round" rotation="-90" origin={`${center}, ${center}`} />
+        <SvgCircle cx={center + radius * Math.cos(((targetProgress * 360) - 90) * Math.PI / 180)} cy={center + radius * Math.sin(((targetProgress * 360) - 90) * Math.PI / 180)} r={7} fill={COLORS.accent} stroke={COLORS.white} strokeWidth={2.5} />
       </Svg>
       <View style={{ position: 'absolute', alignItems: 'center' }}>
         <Text style={{ fontSize: 44, fontFamily: 'JosefinSans-Bold', color: COLORS.text }}>{gpa.toFixed(2)}</Text>
@@ -139,9 +136,7 @@ function ComparisonBar({ current, target, label }) {
     <View style={{ marginBottom: 14 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
         <Text style={{ fontSize: 13, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textSecondary }}>{label}</Text>
-        <Text style={{ fontSize: 13, fontFamily: 'JosefinSans-Bold', color: COLORS.text }}>
-          {current.toFixed(1)} / {target.toFixed(1)}
-        </Text>
+        <Text style={{ fontSize: 13, fontFamily: 'JosefinSans-Bold', color: COLORS.text }}>{current.toFixed(1)} / {target.toFixed(1)}</Text>
       </View>
       <View style={{ height: 10, backgroundColor: COLORS.surfaceAlt, borderRadius: 5, overflow: 'hidden' }}>
         <View style={{ height: '100%', width: `${percent}%`, borderRadius: 5, backgroundColor: percent >= 100 ? COLORS.success : COLORS.primary }} />
@@ -152,22 +147,70 @@ function ComparisonBar({ current, target, label }) {
 
 const GPATrackerScreen = () => {
   const [showSimulation, setShowSimulation] = useState(false);
+  const [notificationsSetup, setNotificationsSetup] = useState(false);
   const isFocused = useIsFocused();
 
   const { modules, gpa, totalCredits, analytics, fetchModules, fetchAnalytics } = useAcademicStore();
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { 
+    loadData(); 
+  }, []);
 
-  const loadData = async () => { await Promise.all([fetchModules(), fetchAnalytics()]); };
+  useEffect(() => {
+    if (modules.length > 0 && !notificationsSetup) {
+      setupAssessmentNotifications();
+      setNotificationsSetup(true);
+    }
+  }, [modules, notificationsSetup]);
+
+  const loadData = async () => { 
+    await Promise.all([fetchModules(), fetchAnalytics()]); 
+  };
+
+  // Setup notifications for all assessments
+  const setupAssessmentNotifications = async () => {
+    for (const module of modules) {
+      for (const assessment of (module.assessments || [])) {
+        if (assessment.date) {
+          const examDate = new Date(assessment.date);
+          if (examDate > new Date()) {
+            await scheduleExamReminder(assessment.title, assessment.date, module.moduleName);
+            await scheduleExamDayReminder(assessment.title, assessment.date, module.moduleName);
+          }
+        }
+      }
+    }
+
+    // Check GPA and send alert if needed
+    if (gpa < 3.5 && analytics?.atRiskModules?.length > 0) {
+      const atRiskModule = analytics.atRiskModules[0];
+      await sendGPAAlert(gpa, 3.5, atRiskModule?.moduleName);
+    }
+  };
+
+  // Refresh notifications when data changes
+  const handleRefresh = async () => {
+    await loadData();
+    setNotificationsSetup(false);
+  };
 
   const getGradeColor = (grade) => GRADE_COLORS[grade] || COLORS.textMuted;
   const getGradeValue = (grade) => GRADE_VALUES[grade] || 0.0;
-
   const atRiskModules = analytics?.atRiskModules || [];
   const totalModules = modules.length;
   const targetGPA = 3.5;
   const predictedGPA = analytics?.predictedGPA || gpa;
   const completionRate = analytics?.completionRate || 0;
+
+  // Get upcoming exams
+  const upcomingExams = modules.reduce((acc, module) => {
+    (module.assessments || []).forEach(assessment => {
+      if (assessment.date && new Date(assessment.date) > new Date()) {
+        acc.push({ ...assessment, moduleName: module.moduleName, moduleColor: module.color });
+      }
+    });
+    return acc.sort((a, b) => new Date(a.date) - new Date(b.date));
+  }, []);
 
   const handleSimulationComplete = (result) => {
     setShowSimulation(false);
@@ -177,13 +220,12 @@ const GPATrackerScreen = () => {
   const getGpaBoosterInsights = () => {
     if (!modules || modules.length === 0) return [];
     const safeCredits = Math.max(totalCredits, 1);
-    
     return modules
       .filter(m => m.currentGrade && getGradeValue(m.currentGrade) < 4.0)
       .map(m => {
         const currentVal = getGradeValue(m.currentGrade);
         const weight = (m.credits || 0) / safeCredits;
-        const potentialLift = (0.3 * weight).toFixed(3); 
+        const potentialLift = (0.3 * weight).toFixed(3);
         return {
           ...m,
           lift: parseFloat(potentialLift),
@@ -199,22 +241,23 @@ const GPATrackerScreen = () => {
   return (
     <LinearGradient colors={[COLORS.bgStart, COLORS.bgMid, COLORS.bgEnd]} style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>GPA Tracker</Text>
-        <Text style={styles.headerSub}>{totalModules} active modules</Text>
+        <View>
+          <Text style={styles.headerTitle}>GPA Tracker</Text>
+          <Text style={styles.headerSub}>{totalModules} active modules</Text>
+        </View>
+        {upcomingExams.length > 0 && (
+          <TouchableOpacity onPress={handleRefresh} style={styles.refreshBtn}>
+            <Bell size={18} color={COLORS.primary} />
+            {upcomingExams.length > 0 && <View style={styles.notifBadge} />}
+          </TouchableOpacity>
+        )}
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        
-        {/* HERO HEADER: Fixed Sizing & Centralized Constraints */}
         <Animated.View entering={FadeInDown.duration(400).delay(100)} style={styles.deskContainer}>
           <LinearGradient colors={[COLORS.slate, COLORS.slateDark]} style={StyleSheet.absoluteFill} />
           {isFocused && (
-            <Canvas 
-              dpr={[1, 2]} 
-              gl={{ antialias: true, alpha: true }} 
-              camera={{ position: MODEL_CONFIG.cameraPos, fov: MODEL_CONFIG.cameraFov }} 
-              style={{ flex: 1 }}
-            >
+            <Canvas dpr={[1, 2]} gl={{ antialias: true, alpha: true }} camera={{ position: MODEL_CONFIG.cameraPos, fov: MODEL_CONFIG.cameraFov }} style={{ flex: 1 }}>
               <Suspense fallback={null}>
                 <DeskModel />
               </Suspense>
@@ -226,7 +269,32 @@ const GPATrackerScreen = () => {
           </View>
         </Animated.View>
 
-        {/* GPA Ring Metric Display */}
+        {/* Upcoming Exams Alert */}
+        {upcomingExams.length > 0 && (
+          <Animated.View entering={FadeInDown.duration(400).delay(150)} style={styles.examAlertCard}>
+            <View style={styles.examAlertHeader}>
+              <Calendar size={16} color={COLORS.warning} />
+              <Text style={styles.examAlertTitle}>Upcoming Exams</Text>
+              <View style={styles.examAlertBadge}>
+                <Text style={styles.examAlertBadgeText}>{upcomingExams.length}</Text>
+              </View>
+            </View>
+            {upcomingExams.slice(0, 3).map((exam, i) => (
+              <View key={i} style={styles.examItem}>
+                <View style={[styles.examDot, { backgroundColor: exam.moduleColor }]} />
+                <View style={styles.examInfo}>
+                  <Text style={styles.examName} numberOfLines={1}>{exam.title}</Text>
+                  <Text style={styles.examMeta}>{exam.moduleName} • {new Date(exam.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</Text>
+                </View>
+                <Clock size={14} color={COLORS.textMuted} />
+              </View>
+            ))}
+            {upcomingExams.length > 3 && (
+              <Text style={styles.examMore}>+{upcomingExams.length - 3} more exams</Text>
+            )}
+          </Animated.View>
+        )}
+
         <Animated.View entering={FadeInDown.duration(400).delay(200)} style={styles.ringCard}>
           <View style={styles.ringContainer}>
             <GPARing gpa={gpa} targetGPA={targetGPA} size={190} />
@@ -238,19 +306,18 @@ const GPATrackerScreen = () => {
             </View>
             <View style={styles.ringStatItem}>
               <View style={[styles.ringStatDot, { backgroundColor: COLORS.accent }]} />
-              <Text style={styles.ringStatLabel}>Target Horizon ({targetGPA.toFixed(2)})</Text>
+              <Text style={styles.ringStatLabel}>Target ({targetGPA.toFixed(2)})</Text>
             </View>
           </View>
         </Animated.View>
 
-        {/* GPA BOOSTER INSIGHTS ENGINE */}
         {boosterInsights.length > 0 && (
           <Animated.View entering={FadeInDown.duration(400).delay(250)} style={styles.boosterCard}>
             <View style={styles.boosterHeader}>
               <TrendingUp size={18} color={COLORS.accent} />
               <Text style={styles.boosterTitle}>GPA Booster Recommendations</Text>
             </View>
-            <Text style={styles.boosterSubtitle}>Highest leverage targets to maximize your current term performance:</Text>
+            <Text style={styles.boosterSubtitle}>Highest leverage targets to maximize your GPA:</Text>
             {boosterInsights.map((insight, idx) => (
               <View key={insight.id || idx} style={styles.boosterItem}>
                 <View style={styles.boosterIconContainer}>
@@ -258,10 +325,11 @@ const GPATrackerScreen = () => {
                 </View>
                 <View style={styles.boosterTextContainer}>
                   <Text style={styles.boosterItemText}>
-                    Push <Text style={styles.boldText}>{insight.moduleName}</Text> from {insight.currentGrade || '?'} to <Text style={[styles.boldText, {color: COLORS.success}]}>{insight.targetGrade}</Text>
+                    Push <Text style={styles.boldText}>{insight.moduleName}</Text> from {insight.currentGrade || '?'} to{' '}
+                    <Text style={[styles.boldText, { color: COLORS.success }]}>{insight.targetGrade}</Text>
                   </Text>
                   <Text style={styles.boosterItemSub}>
-                    High structural weight ({insight.credits} credits) • Adds <Text style={{fontFamily: 'JosefinSans-Bold'}}>+{insight.lift.toFixed(3)}</Text> directly to total GPA
+                    {insight.credits} credits • +{insight.lift.toFixed(3)} GPA impact
                   </Text>
                 </View>
               </View>
@@ -269,7 +337,6 @@ const GPATrackerScreen = () => {
           </Animated.View>
         )}
 
-        {/* Progress Comparisons */}
         <Animated.View entering={FadeInDown.duration(400).delay(300)} style={styles.card}>
           <Text style={styles.cardTitle}>Progress Breakdown</Text>
           <ComparisonBar current={gpa} target={targetGPA} label="GPA Progress" />
@@ -277,33 +344,26 @@ const GPATrackerScreen = () => {
           <ComparisonBar current={predictedGPA} target={targetGPA} label="Predicted vs Target GPA" />
         </Animated.View>
 
-        {/* Module GPA Impact */}
         <Animated.View entering={FadeInDown.duration(400).delay(400)} style={styles.card}>
           <Text style={styles.cardTitle}>Module Impact</Text>
           {modules.map((mod, i) => {
             const safeCredits = Math.max(totalCredits, 1);
             const impactPoints = ((getGradeValue(mod.currentGrade) * (mod.credits || 0)) / safeCredits).toFixed(2);
-            
             return (
               <View key={mod.id} style={[styles.impactItem, i < modules.length - 1 && styles.impactBorder]}>
                 <View style={[styles.impactDot, { backgroundColor: mod.color || COLORS.primary }]} />
                 <View style={styles.impactInfo}>
                   <Text style={styles.impactName}>{mod.moduleName}</Text>
-                  <Text style={styles.impactCredits}>
-                    {mod.credits} credits · Adds {impactPoints} to GPA
-                  </Text>
+                  <Text style={styles.impactCredits}>{mod.credits} credits • Adds {impactPoints} to GPA</Text>
                 </View>
                 <View style={styles.impactGrade}>
-                  <Text style={[styles.impactGradeText, { color: getGradeColor(mod.currentGrade) }]}>
-                    {mod.currentGrade || '?'}
-                  </Text>
+                  <Text style={[styles.impactGradeText, { color: getGradeColor(mod.currentGrade) }]}>{mod.currentGrade || '?'}</Text>
                 </View>
               </View>
             );
           })}
         </Animated.View>
 
-        {/* At Risk Alert Matrix */}
         {atRiskModules.length > 0 && (
           <Animated.View entering={FadeInDown.duration(400).delay(500)} style={styles.riskCard}>
             <View style={styles.riskHeader}>
@@ -319,10 +379,9 @@ const GPATrackerScreen = () => {
           </Animated.View>
         )}
 
-        {/* What-If Simulation Trigger */}
         <Animated.View entering={FadeInDown.duration(400).delay(600)}>
           <TouchableOpacity style={styles.simBtn} onPress={() => setShowSimulation(true)} activeOpacity={0.8}>
-            <LinearGradient colors={[COLORS.primary, COLORS.primaryDark]} style={styles.simGrad} start={{x: 0, y: 0}} end={{x: 1, y: 0}}>
+            <LinearGradient colors={[COLORS.primary, COLORS.primaryDark]} style={styles.simGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
               <Zap size={20} color={COLORS.white} />
               <Text style={styles.simText}>What-If Simulation</Text>
               <ChevronRight size={20} color={COLORS.white} />
@@ -340,26 +399,36 @@ const GPATrackerScreen = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 16 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 16 },
   headerTitle: { fontSize: 34, fontFamily: 'JosefinSans-Bold', color: COLORS.text, letterSpacing: -0.5 },
   headerSub: { fontSize: 14, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textSecondary, marginTop: 4 },
+  refreshBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: COLORS.surface, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
+  notifBadge: { position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.danger },
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingBottom: 20 },
-
-  // Hero Area Box Frame
   deskContainer: { height: 240, borderRadius: 28, overflow: 'hidden', marginBottom: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.14, shadowRadius: 18, elevation: 5 },
   glassOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 46, justifyContent: 'center', paddingHorizontal: 20, overflow: 'hidden', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)' },
   deskLabel: { fontSize: 12, fontFamily: 'JosefinSans-Bold', color: COLORS.white, opacity: 0.9, zIndex: 1, letterSpacing: 1 },
 
-  // Cards layout
+  // Upcoming Exams
+  examAlertCard: { backgroundColor: COLORS.surface, borderRadius: 20, padding: 16, marginBottom: 14, borderLeftWidth: 3, borderLeftColor: COLORS.warning, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
+  examAlertHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  examAlertTitle: { fontSize: 14, fontFamily: 'JosefinSans-Bold', color: COLORS.text, flex: 1 },
+  examAlertBadge: { backgroundColor: COLORS.warning + '20', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
+  examAlertBadgeText: { fontSize: 11, fontFamily: 'JosefinSans-Bold', color: COLORS.warning },
+  examItem: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: COLORS.surfaceAlt },
+  examDot: { width: 6, height: 6, borderRadius: 3 },
+  examInfo: { flex: 1 },
+  examName: { fontSize: 13, fontFamily: 'JosefinSans-Bold', color: COLORS.text, marginBottom: 2 },
+  examMeta: { fontSize: 11, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textMuted },
+  examMore: { fontSize: 12, fontFamily: 'JosefinSans-Bold', color: COLORS.primary, marginTop: 8, textAlign: 'center' },
+
   ringCard: { backgroundColor: COLORS.surface, borderRadius: 24, padding: 24, marginBottom: 16, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.04, shadowRadius: 16, elevation: 3 },
   ringContainer: { marginBottom: 16 },
   ringStats: { flexDirection: 'row', gap: 28 },
   ringStatItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   ringStatDot: { width: 10, height: 10, borderRadius: 5 },
   ringStatLabel: { fontSize: 13, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textSecondary },
-
-  // Booster engine card
   boosterCard: { backgroundColor: COLORS.surface, borderRadius: 24, padding: 20, marginBottom: 16, borderWidth: 1.5, borderColor: 'rgba(99, 102, 241, 0.15)', shadowColor: COLORS.accent, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.05, shadowRadius: 14, elevation: 2 },
   boosterHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
   boosterTitle: { fontSize: 16, fontFamily: 'JosefinSans-Bold', color: COLORS.accent },
@@ -370,10 +439,8 @@ const styles = StyleSheet.create({
   boosterItemText: { fontSize: 14, fontFamily: 'JosefinSans-SemiBold', color: COLORS.text, lineHeight: 18 },
   boosterItemSub: { fontSize: 11, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textMuted, marginTop: 2 },
   boldText: { fontFamily: 'JosefinSans-Bold' },
-
   card: { backgroundColor: COLORS.surface, borderRadius: 24, padding: 20, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.04, shadowRadius: 16, elevation: 3 },
   cardTitle: { fontSize: 18, fontFamily: 'JosefinSans-Bold', color: COLORS.text, marginBottom: 18 },
-
   impactItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
   impactBorder: { borderBottomWidth: 1, borderBottomColor: COLORS.surfaceAlt },
   impactDot: { width: 10, height: 10, borderRadius: 5 },
@@ -382,14 +449,12 @@ const styles = StyleSheet.create({
   impactCredits: { fontSize: 12, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textMuted },
   impactGrade: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10, backgroundColor: COLORS.surfaceAlt },
   impactGradeText: { fontSize: 14, fontFamily: 'JosefinSans-Bold' },
-
-  riskCard: { backgroundColor: '#FEF2F2', borderRadius: 20, padding: 18, marginBottom: 16, borderLeftWidth: 4, borderLeftColor: 'white', shadowColor: COLORS.danger, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 2 },
+  riskCard: { backgroundColor: '#FEF2F2', borderRadius: 20, padding: 18, marginBottom: 16, borderLeftWidth: 4, borderLeftColor: COLORS.danger, shadowColor: COLORS.danger, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 2 },
   riskHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
   riskTitle: { fontSize: 16, fontFamily: 'JosefinSans-Bold', color: COLORS.danger },
   riskModuleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
   riskModuleText: { fontSize: 14, fontFamily: 'JosefinSans-SemiBold', color: COLORS.text },
   riskModuleGrade: { fontSize: 14, fontFamily: 'JosefinSans-Bold', color: COLORS.danger },
-
   simBtn: { borderRadius: 20, overflow: 'hidden', marginBottom: 16, shadowColor: COLORS.primaryDark, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 4 },
   simGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 18 },
   simText: { fontSize: 17, fontFamily: 'JosefinSans-Bold', color: COLORS.white },

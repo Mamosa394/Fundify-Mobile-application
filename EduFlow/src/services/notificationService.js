@@ -69,48 +69,114 @@ export async function createNotificationChannels() {
   }
 }
 
-const buildNotificationContent = (title, body, data = {}, channelType = 'general') => ({
+const buildTrigger = (type, dateOrConfig, channelId = 'general') => {
+  if (type === 'date') {
+    const triggerDate = dateOrConfig || new Date(Date.now() + 1000);
+    if (Platform.OS === 'ios') {
+      return { type: 'date', date: triggerDate };
+    }
+    return { type: 'date', date: triggerDate, channelId };
+  }
+  if (type === 'daily') {
+    if (Platform.OS === 'ios') {
+      return { type: 'daily', hour: dateOrConfig.hour, minute: dateOrConfig.minute };
+    }
+    return { type: 'daily', hour: dateOrConfig.hour, minute: dateOrConfig.minute, channelId };
+  }
+  if (type === 'weekly') {
+    if (Platform.OS === 'ios') {
+      return { type: 'weekly', weekday: dateOrConfig.weekday, hour: dateOrConfig.hour, minute: dateOrConfig.minute };
+    }
+    return { type: 'weekly', weekday: dateOrConfig.weekday, hour: dateOrConfig.hour, minute: dateOrConfig.minute, channelId };
+  }
+  return { type: 'date', date: new Date(Date.now() + 1000) };
+};
+
+const buildContent = (title, body, data = {}, channelId = 'general') => ({
   title,
   body,
   data: { ...data },
   sound: 'default',
   badge: 1,
-  ...(Platform.OS === 'android' && { channelId: channelType }),
-  ...(Platform.OS === 'ios' && {
-    _displayInForeground: true,
-    interruptionLevel: 'time-sensitive',
-  }),
+  ...(Platform.OS === 'android' && { channelId }),
+  ...(Platform.OS === 'ios' && { _displayInForeground: true }),
 });
 
-export async function scheduleAssignmentReminder(assignmentTitle, dueDate, moduleName) {
+export async function scheduleAssignmentReminder(assignmentTitle, dueDate, moduleName, interval = 'oneDay') {
   try {
     const hasPermission = await requestNotificationPermissions();
     if (!hasPermission) return null;
 
     const triggerDate = new Date(dueDate);
-    triggerDate.setHours(triggerDate.getHours() - 24);
+    let title = '';
+    let body = '';
+
+    switch (interval) {
+      case 'week':
+        triggerDate.setDate(triggerDate.getDate() - 7);
+        title = 'Assignment Due in 1 Week';
+        body = `${assignmentTitle} for ${moduleName} is due in 1 week.`;
+        break;
+      case 'threeDays':
+        triggerDate.setDate(triggerDate.getDate() - 3);
+        title = 'Assignment Due in 3 Days';
+        body = `${assignmentTitle} for ${moduleName} is due in 3 days.`;
+        break;
+      case 'oneDay':
+        triggerDate.setHours(triggerDate.getHours() - 24);
+        title = 'Assignment Due Tomorrow';
+        body = `${assignmentTitle} for ${moduleName} is due tomorrow.`;
+        break;
+      case 'due':
+        triggerDate.setHours(8, 0, 0, 0);
+        title = 'Assignment Due Today';
+        body = `${assignmentTitle} for ${moduleName} is due today!`;
+        break;
+      default:
+        triggerDate.setHours(triggerDate.getHours() - 24);
+        title = 'Assignment Reminder';
+        body = `${assignmentTitle} for ${moduleName} is due soon.`;
+    }
 
     if (triggerDate <= new Date()) return null;
 
     const identifier = await Notifications.scheduleNotificationAsync({
-      content: buildNotificationContent(
-        'Assignment Due Tomorrow',
-        `${assignmentTitle} for ${moduleName} is due tomorrow.`,
-        { type: 'assignment_reminder', moduleName, assignmentTitle },
-        'assignment-reminders'
-      ),
-      trigger: {
-        type: 'date',
-        date: triggerDate,
-        ...(Platform.OS === 'android' && { channelId: 'assignment-reminders' }),
-      },
+      content: buildContent(title, body, { type: 'assignment_reminder', moduleName, assignmentTitle, interval }, 'assignment-reminders'),
+      trigger: buildTrigger('date', triggerDate, 'assignment-reminders'),
     });
 
-    console.log('[Notifications] Assignment reminder scheduled');
+    console.log(`[Notifications] Assignment ${interval} reminder: ${assignmentTitle}`);
     return identifier;
   } catch (error) {
-    console.error('[Notifications] Assignment error:', error);
+    console.error('[Notifications] Assignment reminder error:', error);
     return null;
+  }
+}
+
+export async function sendNewAssignmentNotification(assignmentTitle, dueDate, moduleName, marksObtained, totalMarks) {
+  try {
+    const hasPermission = await requestNotificationPermissions();
+    if (!hasPermission) return null;
+
+    const dueDateFormatted = new Date(dueDate).toLocaleDateString('en-US', {
+      weekday: 'short', month: 'short', day: 'numeric',
+    });
+
+    let body = `${assignmentTitle} added for ${moduleName}.\nDue: ${dueDateFormatted}`;
+    if (totalMarks && totalMarks > 0) {
+      body += `\nTotal Marks: ${totalMarks}`;
+    }
+
+    await Notifications.scheduleNotificationAsync({
+      content: buildContent('New Assignment Added', body, { type: 'new_assignment', moduleName, assignmentTitle, dueDate, marksObtained, totalMarks }, 'assignment-reminders'),
+      trigger: buildTrigger('date', new Date(Date.now() + 1000), 'assignment-reminders'),
+    });
+
+    console.log('[Notifications] New assignment notification sent:', assignmentTitle);
+    return true;
+  } catch (error) {
+    console.error('[Notifications] New assignment notification error:', error);
+    return false;
   }
 }
 
@@ -125,17 +191,8 @@ export async function scheduleExamReminder(assessmentTitle, examDate, moduleName
     if (triggerDate <= new Date()) return null;
 
     const identifier = await Notifications.scheduleNotificationAsync({
-      content: buildNotificationContent(
-        'Upcoming Exam',
-        `${assessmentTitle} for ${moduleName} is in 3 days.`,
-        { type: 'exam_reminder', moduleName, assessmentTitle },
-        'academic-alerts'
-      ),
-      trigger: {
-        type: 'date',
-        date: triggerDate,
-        ...(Platform.OS === 'android' && { channelId: 'academic-alerts' }),
-      },
+      content: buildContent('Upcoming Exam', `${assessmentTitle} for ${moduleName} is in 3 days.`, { type: 'exam_reminder', moduleName, assessmentTitle }, 'academic-alerts'),
+      trigger: buildTrigger('date', triggerDate, 'academic-alerts'),
     });
 
     console.log('[Notifications] Exam reminder scheduled');
@@ -158,17 +215,8 @@ export async function scheduleExamDayReminder(assessmentTitle, examDate, moduleN
     if (triggerDate <= new Date()) return null;
 
     const identifier = await Notifications.scheduleNotificationAsync({
-      content: buildNotificationContent(
-        'Exam Tomorrow',
-        `${assessmentTitle} for ${moduleName} is tomorrow.`,
-        { type: 'exam_reminder', moduleName, assessmentTitle },
-        'academic-alerts'
-      ),
-      trigger: {
-        type: 'date',
-        date: triggerDate,
-        ...(Platform.OS === 'android' && { channelId: 'academic-alerts' }),
-      },
+      content: buildContent('Exam Tomorrow', `${assessmentTitle} for ${moduleName} is tomorrow.`, { type: 'exam_reminder', moduleName, assessmentTitle }, 'academic-alerts'),
+      trigger: buildTrigger('date', triggerDate, 'academic-alerts'),
     });
 
     console.log('[Notifications] Exam day reminder scheduled');
@@ -185,15 +233,12 @@ export async function sendGPAAlert(currentGPA, targetGPA, moduleName) {
     if (!hasPermission || currentGPA >= targetGPA) return null;
 
     await Notifications.scheduleNotificationAsync({
-      content: buildNotificationContent(
-        'GPA Alert',
+      content: buildContent('GPA Alert',
         moduleName
           ? `${moduleName} grade dropped. GPA (${currentGPA.toFixed(1)}) below target (${targetGPA.toFixed(1)}).`
           : `GPA (${currentGPA.toFixed(1)}) below target (${targetGPA.toFixed(1)}).`,
-        { type: 'gpa_alert', currentGPA, targetGPA, moduleName },
-        'gpa-alerts'
-      ),
-      trigger: { type: 'date', date: new Date() },
+        { type: 'gpa_alert', currentGPA, targetGPA, moduleName }, 'gpa-alerts'),
+      trigger: buildTrigger('date', new Date(Date.now() + 1000), 'gpa-alerts'),
     });
 
     console.log('[Notifications] GPA alert sent');
@@ -212,13 +257,10 @@ export async function sendGradeUpdateNotification(moduleName, oldGrade, newGrade
     const improved = getGradeValue(newGrade) > getGradeValue(oldGrade);
 
     await Notifications.scheduleNotificationAsync({
-      content: buildNotificationContent(
-        improved ? 'Grade Improved' : 'Grade Updated',
+      content: buildContent(improved ? 'Grade Improved' : 'Grade Updated',
         `${moduleName}: ${oldGrade} -> ${newGrade}`,
-        { type: 'grade_update', moduleName, oldGrade, newGrade },
-        'academic-alerts'
-      ),
-      trigger: { type: 'date', date: new Date() },
+        { type: 'grade_update', moduleName, oldGrade, newGrade }, 'academic-alerts'),
+      trigger: buildTrigger('date', new Date(Date.now() + 1000), 'academic-alerts'),
     });
 
     console.log('[Notifications] Grade update sent');
@@ -235,13 +277,10 @@ export async function sendOverdueNotification(assignmentTitle, moduleName, daysO
     if (!hasPermission) return null;
 
     await Notifications.scheduleNotificationAsync({
-      content: buildNotificationContent(
-        'Assignment Overdue',
+      content: buildContent('Assignment Overdue',
         `${assignmentTitle} for ${moduleName} is ${daysOverdue} day${daysOverdue > 1 ? 's' : ''} overdue.`,
-        { type: 'overdue_alert', moduleName, assignmentTitle, daysOverdue },
-        'assignment-reminders'
-      ),
-      trigger: { type: 'date', date: new Date() },
+        { type: 'overdue_alert', moduleName, assignmentTitle, daysOverdue }, 'assignment-reminders'),
+      trigger: buildTrigger('date', new Date(Date.now() + 1000), 'assignment-reminders'),
     });
 
     console.log('[Notifications] Overdue sent');
@@ -260,18 +299,8 @@ export async function scheduleDailyStudyReminder(hour = 8, minute = 0) {
     await cancelDailyReminders();
 
     const identifier = await Notifications.scheduleNotificationAsync({
-      content: buildNotificationContent(
-        'Study Time',
-        'Start your day with focused study.',
-        { type: 'daily_study' },
-        'general'
-      ),
-      trigger: {
-        type: 'daily',
-        hour,
-        minute,
-        ...(Platform.OS === 'android' && { channelId: 'general' }),
-      },
+      content: buildContent('Study Time', 'Start your day with focused study.', { type: 'daily_study' }, 'general'),
+      trigger: buildTrigger('daily', { hour, minute }, 'general'),
     });
 
     console.log('[Notifications] Daily study scheduled');
@@ -290,19 +319,8 @@ export async function scheduleWeeklySummary() {
     await cancelWeeklySummary();
 
     const identifier = await Notifications.scheduleNotificationAsync({
-      content: buildNotificationContent(
-        'Weekly Summary',
-        'Review your academic progress for this week.',
-        { type: 'weekly_summary' },
-        'general'
-      ),
-      trigger: {
-        type: 'weekly',
-        weekday: 1,
-        hour: 18,
-        minute: 0,
-        ...(Platform.OS === 'android' && { channelId: 'general' }),
-      },
+      content: buildContent('Weekly Summary', 'Review your academic progress.', { type: 'weekly_summary' }, 'general'),
+      trigger: buildTrigger('weekly', { weekday: 1, hour: 18, minute: 0 }, 'general'),
     });
 
     console.log('[Notifications] Weekly summary scheduled');
@@ -319,11 +337,9 @@ export async function sendCustomNotification(title, body, data = {}) {
     if (!hasPermission) return null;
 
     await Notifications.scheduleNotificationAsync({
-      content: buildNotificationContent(title, body, data, 'general'),
-      trigger: { type: 'date', date: new Date() },
+      content: buildContent(title, body, data, 'general'),
+      trigger: buildTrigger('date', new Date(Date.now() + 1000), 'general'),
     });
-
-    console.log('[Notifications] Custom sent');
     return true;
   } catch (error) {
     console.error('[Notifications] Custom error:', error);
@@ -332,81 +348,52 @@ export async function sendCustomNotification(title, body, data = {}) {
 }
 
 export async function cancelNotification(identifier) {
-  try {
-    if (identifier) await Notifications.cancelScheduledNotificationAsync(identifier);
-  } catch (error) {
-    console.error('[Notifications] Cancel error:', error);
-  }
+  try { if (identifier) await Notifications.cancelScheduledNotificationAsync(identifier); } catch (error) {}
 }
 
 export async function cancelAllNotifications() {
-  try {
-    await Notifications.cancelAllScheduledNotificationsAsync();
-  } catch (error) {
-    console.error('[Notifications] Cancel all error:', error);
-  }
+  try { await Notifications.cancelAllScheduledNotificationsAsync(); } catch (error) {}
 }
 
 export async function cancelDailyReminders() {
   try {
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
     for (const n of scheduled) {
-      if (n.content.data?.type === 'daily_study') {
-        await Notifications.cancelScheduledNotificationAsync(n.identifier);
-      }
+      if (n.content.data?.type === 'daily_study') await Notifications.cancelScheduledNotificationAsync(n.identifier);
     }
-  } catch (error) {
-    console.error('[Notifications] Cancel daily error:', error);
-  }
+  } catch (error) {}
 }
 
 export async function cancelWeeklySummary() {
   try {
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
     for (const n of scheduled) {
-      if (n.content.data?.type === 'weekly_summary') {
-        await Notifications.cancelScheduledNotificationAsync(n.identifier);
-      }
+      if (n.content.data?.type === 'weekly_summary') await Notifications.cancelScheduledNotificationAsync(n.identifier);
     }
-  } catch (error) {
-    console.error('[Notifications] Cancel weekly error:', error);
-  }
+  } catch (error) {}
 }
 
 export async function getScheduledNotifications() {
-  try {
-    return await Notifications.getAllScheduledNotificationsAsync();
-  } catch (error) {
-    return [];
-  }
+  try { return await Notifications.getAllScheduledNotificationsAsync(); } catch (error) { return []; }
 }
 
 export async function sendTestNotification() {
   try {
     const hasPermission = await requestNotificationPermissions();
-    if (!hasPermission) {
-      Alert.alert('Permission Required', 'Enable notifications in Settings.');
-      return false;
-    }
-
+    if (!hasPermission) return false;
     await Notifications.scheduleNotificationAsync({
-      content: buildNotificationContent('Test', 'Notifications working.', { type: 'test' }, 'general'),
-      trigger: { type: 'date', date: new Date() },
+      content: buildContent('Test', 'Notifications working.', { type: 'test' }, 'general'),
+      trigger: buildTrigger('date', new Date(Date.now() + 1000), 'general'),
     });
-
     return true;
-  } catch (error) {
-    return false;
-  }
+  } catch (error) { return false; }
 }
 
-export function isRunningInExpoGo() {
-  return isExpoGo;
-}
+export function isRunningInExpoGo() { return isExpoGo; }
 
 function getGradeValue(grade) {
-  const values = { 'A+': 4.0, 'A': 4.0, 'A-': 3.7, 'B+': 3.3, 'B': 3.0, 'B-': 2.7, 'C+': 2.3, 'C': 2.0, 'C-': 1.7, 'D+': 1.3, 'D': 1.0, 'D-': 0.7, 'F': 0.0 };
-  return values[grade] || 0;
+  const v = { 'A+': 4.0, 'A': 4.0, 'A-': 3.7, 'B+': 3.3, 'B': 3.0, 'B-': 2.7, 'C+': 2.3, 'C': 2.0, 'C-': 1.7, 'D+': 1.3, 'D': 1.0, 'D-': 0.7, 'F': 0.0 };
+  return v[grade] || 0;
 }
 
 export function initNotificationListeners(navigation) {
@@ -417,6 +404,7 @@ export function initNotificationListeners(navigation) {
       switch (data?.type) {
         case 'assignment_reminder':
         case 'overdue_alert':
+        case 'new_assignment':
           navigation.navigate('Planner', { screen: 'AssignmentsTab' });
           break;
         case 'exam_reminder':
@@ -426,8 +414,7 @@ export function initNotificationListeners(navigation) {
         case 'gpa_alert':
           navigation.navigate('Planner', { screen: 'GPATab' });
           break;
-        default:
-          break;
+        default: break;
       }
     }
   });
@@ -438,6 +425,7 @@ export default {
   requestNotificationPermissions,
   createNotificationChannels,
   scheduleAssignmentReminder,
+  sendNewAssignmentNotification,
   scheduleExamReminder,
   scheduleExamDayReminder,
   sendGPAAlert,

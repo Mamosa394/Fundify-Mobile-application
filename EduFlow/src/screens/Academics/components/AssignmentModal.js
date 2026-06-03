@@ -1,4 +1,4 @@
-// src/screens/AcademicPlanner/components/AssignmentModal.js
+// src/screens/Academics/components/AssignmentModal.js
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -17,6 +17,11 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { X, Calendar, ChevronLeft, ChevronRight } from 'lucide-react-native';
 import useAcademicStore from '../../../store/academicStore';
+import { 
+  sendNewAssignmentNotification, 
+  scheduleAssignmentReminder,
+  sendOverdueNotification 
+} from '../../../services/notificationService';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const PADDING = 20;
@@ -48,6 +53,7 @@ const AssignmentModal = ({ visible, module, assignment, onClose }) => {
   const [formData, setFormData] = useState({});
   const [showCalendar, setShowCalendar] = useState(false);
   const [calendarDate, setCalendarDate] = useState(new Date());
+  const [saving, setSaving] = useState(false);
   const { modules, addAssignment, updateAssignment } = useAcademicStore();
 
   useEffect(() => {
@@ -79,6 +85,7 @@ const AssignmentModal = ({ visible, module, assignment, onClose }) => {
       setCalendarDate(new Date());
     }
     setShowCalendar(false);
+    setSaving(false);
   }, [assignment, module, visible]);
 
   const handleSubmit = async () => {
@@ -89,6 +96,7 @@ const AssignmentModal = ({ visible, module, assignment, onClose }) => {
       return;
     }
 
+    setSaving(true);
     try {
       const assignmentData = {
         title: formData.title.trim(),
@@ -104,11 +112,32 @@ const AssignmentModal = ({ visible, module, assignment, onClose }) => {
         await updateAssignment(formData.moduleId, assignment.id, assignmentData);
       } else {
         await addAssignment(formData.moduleId, assignmentData);
+        
+        // Send notifications for new assignment
+        const mod = modules.find(m => m.id === formData.moduleId);
+        if (mod) {
+          // Immediate notification
+          await sendNewAssignmentNotification(
+            assignmentData.title,
+            assignmentData.dueDate,
+            mod.moduleName,
+            assignmentData.marksObtained,
+            assignmentData.totalMarks
+          );
+          
+          // Schedule progressive reminders
+          await scheduleAssignmentReminder(assignmentData.title, assignmentData.dueDate, mod.moduleName, 'week');
+          await scheduleAssignmentReminder(assignmentData.title, assignmentData.dueDate, mod.moduleName, 'threeDays');
+          await scheduleAssignmentReminder(assignmentData.title, assignmentData.dueDate, mod.moduleName, 'oneDay');
+          await scheduleAssignmentReminder(assignmentData.title, assignmentData.dueDate, mod.moduleName, 'due');
+        }
       }
 
       onClose();
     } catch (error) {
-      Alert.alert('Error', error.message);
+      Alert.alert('Error', error.message || 'Failed to save assignment');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -119,20 +148,18 @@ const AssignmentModal = ({ visible, module, assignment, onClose }) => {
     { value: 'overdue', color: COLORS.danger, label: 'Overdue' },
   ];
 
-  // Calendar helpers
   const getDaysInMonth = (date) => {
     return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
   };
 
   const getFirstDayOfMonth = (date) => {
     let day = new Date(date.getFullYear(), date.getMonth(), 1).getDay();
-    return day === 0 ? 6 : day - 1; // Convert Sunday(0) to 6, Monday(1) to 0
+    return day === 0 ? 6 : day - 1;
   };
 
   const changeMonth = (delta) => {
     const newDate = new Date(calendarDate);
     newDate.setMonth(newDate.getMonth() + delta);
-    // Don't go before current month
     const now = new Date();
     if (newDate.getFullYear() < now.getFullYear() || 
        (newDate.getFullYear() === now.getFullYear() && newDate.getMonth() < now.getMonth())) {
@@ -200,7 +227,7 @@ const AssignmentModal = ({ visible, module, assignment, onClose }) => {
 
           <View style={styles.header}>
             <Text style={styles.title}>{assignment ? 'Edit Assignment' : 'New Assignment'}</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton} disabled={saving}>
               <X size={20} color={COLORS.text} />
             </TouchableOpacity>
           </View>
@@ -210,17 +237,16 @@ const AssignmentModal = ({ visible, module, assignment, onClose }) => {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Title */}
             <Text style={styles.label}>TITLE</Text>
             <TextInput
               style={styles.input}
-              placeholder="Assingment Title"
+              placeholder="Assignment Title"
               placeholderTextColor={COLORS.textMuted}
               value={formData.title}
               onChangeText={(text) => setFormData({ ...formData, title: text })}
+              editable={!saving}
             />
 
-            {/* Module */}
             <Text style={styles.label}>MODULE</Text>
             {!module ? (
               <View style={styles.moduleList}>
@@ -232,6 +258,7 @@ const AssignmentModal = ({ visible, module, assignment, onClose }) => {
                       formData.moduleId === m.id && styles.moduleOptionActive,
                     ]}
                     onPress={() => setFormData({ ...formData, moduleId: m.id })}
+                    disabled={saving}
                   >
                     <View style={[styles.moduleDot, { backgroundColor: m.color }]} />
                     <Text style={[
@@ -248,7 +275,6 @@ const AssignmentModal = ({ visible, module, assignment, onClose }) => {
               </View>
             )}
 
-            {/* Due Date with Calendar */}
             <Text style={styles.label}>DUE DATE</Text>
             <TouchableOpacity 
               style={styles.dateButton} 
@@ -256,6 +282,7 @@ const AssignmentModal = ({ visible, module, assignment, onClose }) => {
                 Keyboard.dismiss();
                 setShowCalendar(!showCalendar);
               }}
+              disabled={saving}
             >
               <Calendar size={16} color={COLORS.primary} />
               <Text style={[styles.dateButtonText, formData.dueDate && { color: COLORS.text }]}>
@@ -263,10 +290,8 @@ const AssignmentModal = ({ visible, module, assignment, onClose }) => {
               </Text>
             </TouchableOpacity>
 
-            {/* Calendar */}
             {showCalendar && (
               <View style={styles.calendarContainer}>
-                {/* Month Navigation */}
                 <View style={styles.calendarHeader}>
                   <TouchableOpacity onPress={() => changeMonth(-1)} style={styles.monthArrow}>
                     <ChevronLeft size={18} color={COLORS.primary} />
@@ -279,14 +304,12 @@ const AssignmentModal = ({ visible, module, assignment, onClose }) => {
                   </TouchableOpacity>
                 </View>
 
-                {/* Day Headers */}
                 <View style={styles.dayHeaders}>
                   {DAYS.map((day) => (
                     <Text key={day} style={styles.dayHeader}>{day}</Text>
                   ))}
                 </View>
 
-                {/* Calendar Grid */}
                 <View style={styles.calendarGrid}>
                   {calendarDays.map((day, index) => {
                     if (day === null) {
@@ -306,7 +329,7 @@ const AssignmentModal = ({ visible, module, assignment, onClose }) => {
                           todayDay && !selected && styles.dayCellToday,
                         ]}
                         onPress={() => !past && selectDate(day)}
-                        disabled={past}
+                        disabled={past || saving}
                       >
                         <Text style={[
                           styles.dayText,
@@ -323,7 +346,6 @@ const AssignmentModal = ({ visible, module, assignment, onClose }) => {
               </View>
             )}
 
-            {/* Weight & Marks Row */}
             <View style={styles.row}>
               <View style={styles.half}>
                 <Text style={styles.label}>WEIGHT %</Text>
@@ -334,6 +356,7 @@ const AssignmentModal = ({ visible, module, assignment, onClose }) => {
                   keyboardType="numeric"
                   value={formData.weightPercentage}
                   onChangeText={(text) => setFormData({ ...formData, weightPercentage: text })}
+                  editable={!saving}
                 />
               </View>
               <View style={styles.half}>
@@ -345,11 +368,11 @@ const AssignmentModal = ({ visible, module, assignment, onClose }) => {
                   keyboardType="numeric"
                   value={formData.marksObtained}
                   onChangeText={(text) => setFormData({ ...formData, marksObtained: text })}
+                  editable={!saving}
                 />
               </View>
             </View>
 
-            {/* Total Marks */}
             <Text style={styles.label}>TOTAL MARKS</Text>
             <TextInput
               style={styles.input}
@@ -358,9 +381,9 @@ const AssignmentModal = ({ visible, module, assignment, onClose }) => {
               keyboardType="numeric"
               value={formData.totalMarks}
               onChangeText={(text) => setFormData({ ...formData, totalMarks: text })}
+              editable={!saving}
             />
 
-            {/* Status */}
             <Text style={styles.label}>STATUS</Text>
             <View style={styles.statusRow}>
               {statuses.map((status) => {
@@ -374,6 +397,7 @@ const AssignmentModal = ({ visible, module, assignment, onClose }) => {
                       isActive && { backgroundColor: status.color, borderColor: status.color },
                     ]}
                     onPress={() => setFormData({ ...formData, status: status.value })}
+                    disabled={saving}
                   >
                     <Text style={[
                       styles.statusText,
@@ -385,7 +409,12 @@ const AssignmentModal = ({ visible, module, assignment, onClose }) => {
             </View>
           </ScrollView>
 
-          <TouchableOpacity style={styles.submitButton} onPress={handleSubmit} activeOpacity={0.8}>
+          <TouchableOpacity 
+            style={[styles.submitButton, saving && { opacity: 0.7 }]} 
+            onPress={handleSubmit} 
+            activeOpacity={0.8}
+            disabled={saving}
+          >
             <LinearGradient
               colors={[COLORS.primary, COLORS.primaryDark]}
               start={{ x: 0, y: 0 }}
@@ -393,7 +422,7 @@ const AssignmentModal = ({ visible, module, assignment, onClose }) => {
               style={styles.submitGradient}
             >
               <Text style={styles.submitText}>
-                {assignment ? 'Update Assignment' : 'Add Assignment'}
+                {saving ? 'Saving...' : assignment ? 'Update Assignment' : 'Add Assignment'}
               </Text>
             </LinearGradient>
           </TouchableOpacity>
@@ -459,16 +488,12 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary + '12',
   },
   selectedModuleText: { fontSize: 13, fontFamily: 'JosefinSans-Bold', color: COLORS.primary },
-
-  // Date Button
   dateButton: {
     height: 50, borderRadius: 14, backgroundColor: COLORS.surfaceGlass,
     paddingHorizontal: 16, borderWidth: 1.2, borderColor: COLORS.surfaceGlassBorder,
     flexDirection: 'row', alignItems: 'center', gap: 10,
   },
   dateButtonText: { fontSize: 14, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textMuted },
-
-  // Calendar
   calendarContainer: {
     marginTop: 10,
     backgroundColor: COLORS.surfaceGlass,
@@ -505,34 +530,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
     borderRadius: 10,
   },
-  dayCellSelected: {
-    backgroundColor: COLORS.primary,
-  },
-  dayCellToday: {
-    backgroundColor: COLORS.primary + '12',
-  },
-  dayText: {
-    fontSize: 13, fontFamily: 'JosefinSans-SemiBold', color: COLORS.text,
-  },
-  dayTextPast: {
-    color: COLORS.border,
-  },
-  dayTextSelected: {
-    color: COLORS.white,
-  },
-  dayTextToday: {
-    color: COLORS.primary, fontFamily: 'JosefinSans-Bold',
-  },
-
-  // Status
+  dayCellSelected: { backgroundColor: COLORS.primary },
+  dayCellToday: { backgroundColor: COLORS.primary + '12' },
+  dayText: { fontSize: 13, fontFamily: 'JosefinSans-SemiBold', color: COLORS.text },
+  dayTextPast: { color: COLORS.border },
+  dayTextSelected: { color: COLORS.white },
+  dayTextToday: { color: COLORS.primary, fontFamily: 'JosefinSans-Bold' },
   statusRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   statusOption: {
     paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
     backgroundColor: COLORS.surfaceGlass, borderWidth: 1.2,
   },
   statusText: { fontSize: 11, fontFamily: 'JosefinSans-Bold' },
-
-  // Submit
   submitButton: {
     borderRadius: 20, overflow: 'hidden',
     shadowColor: COLORS.primaryDark, shadowOffset: { width: 0, height: 10 },

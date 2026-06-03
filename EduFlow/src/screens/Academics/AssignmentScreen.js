@@ -1,3 +1,5 @@
+// src/screens/Academics/AssignmentScreen.js
+
 import React, { useState, useMemo, useEffect, useRef, Suspense } from 'react';
 import {
   View,
@@ -26,9 +28,14 @@ import {
   CheckCircle2,
   AlertCircle,
   FileText,
+  Bell,
 } from 'lucide-react-native';
 import useAcademicStore from '../../store/academicStore';
 import AssignmentModal from './components/AssignmentModal';
+import {
+  scheduleAssignmentReminder,
+  cancelNotification,
+} from '../../services/notificationService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PADDING = 20;
@@ -109,6 +116,39 @@ const AssignmentScreen = () => {
     return Math.ceil((date - now) / (1000 * 60 * 60 * 24));
   };
 
+  // Schedule notifications for an assignment
+  const scheduleNotificationsForAssignment = async (assignment, module) => {
+    const daysUntil = getDaysUntil(assignment.dueDate);
+    
+    // Only schedule if assignment is not completed and due date is in the future
+    if (assignment.status === 'completed' || daysUntil < 0) return;
+
+    // Schedule reminders at different intervals
+    if (daysUntil >= 7) {
+      await scheduleAssignmentReminder(assignment.title, assignment.dueDate, module.moduleName, 'week');
+    }
+    if (daysUntil >= 3) {
+      await scheduleAssignmentReminder(assignment.title, assignment.dueDate, module.moduleName, 'threeDays');
+    }
+    if (daysUntil >= 1) {
+      await scheduleAssignmentReminder(assignment.title, assignment.dueDate, module.moduleName, 'oneDay');
+    }
+    // Due today reminder
+    await scheduleAssignmentReminder(assignment.title, assignment.dueDate, module.moduleName, 'due');
+  };
+
+  const handleEdit = (assignment) => {
+    const mod = modules.find((m) => m.id === assignment.moduleId);
+    setSelectedModuleForAssignment(mod || { id: assignment.moduleId });
+    setSelectedAssignment(assignment);
+    setShowModal(true);
+  };
+
+  const handleModalClose = async () => {
+    setShowModal(false);
+    await loadData();
+  };
+
   const allAssignments = useMemo(() => {
     let list = [];
     modules.forEach((m) => {
@@ -131,19 +171,12 @@ const AssignmentScreen = () => {
     return { total, completed, overdue, pending };
   }, [allAssignments]);
 
-  const handleEdit = (assignment) => {
-    const mod = modules.find((m) => m.id === assignment.moduleId);
-    setSelectedModuleForAssignment(mod || { id: assignment.moduleId });
-    setSelectedAssignment(assignment);
-    setShowModal(true);
-  };
-
   return (
     <LinearGradient colors={[COLORS.bgStart, COLORS.bgMid, COLORS.bgEnd]} style={styles.container}>
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>Assignments</Text>
-          <Text style={styles.headerSubtitle}>{stats.total} total • {stats.completed} done</Text>
+          <Text style={styles.headerSubtitle}>{stats.total} total - {stats.completed} done</Text>
         </View>
         <TouchableOpacity style={styles.addBtn} onPress={() => { setSelectedModuleForAssignment(null); setSelectedAssignment(null); setShowModal(true); }} activeOpacity={0.8}>
           <LinearGradient colors={[COLORS.primary, COLORS.primaryDark]} style={styles.addBtnGrad}>
@@ -256,11 +289,17 @@ const AssignmentScreen = () => {
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      <AssignmentModal visible={showModal} module={selectedModuleForAssignment} assignment={selectedAssignment} onClose={() => { setShowModal(false); loadData(); }} />
+      <AssignmentModal 
+        visible={showModal} 
+        module={selectedModuleForAssignment} 
+        assignment={selectedAssignment} 
+        onClose={handleModalClose} 
+      />
     </LinearGradient>
   );
 };
 
+// Styles remain the same...
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: PADDING, paddingTop: Platform.OS === 'ios' ? 54 : 36, paddingBottom: 12 },

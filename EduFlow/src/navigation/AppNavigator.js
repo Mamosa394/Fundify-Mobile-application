@@ -7,6 +7,8 @@ import BottomTabs from './BottomTabs';
 // Budget & Scholarship screens
 import BudgetScreen from '../screens/Budget/BudgetScreen';
 import ScholarshipScreen from '../screens/Scholarships/ScholarshipScreen';
+import ScholarshipDetailsScreen from '../screens/Scholarships/ScholarshipDetailsScreen';
+import FundingTrackerScreen from '../screens/Scholarships/FundingTrackerScreen';
 
 // Profile screens
 import ProfileScreen from '../screens/Profile/ProfileScreen';
@@ -29,6 +31,8 @@ export default function AppNavigator() {
       {/* Budget & Scholarship direct screens */}
       <Stack.Screen name="Budget" component={BudgetScreen} />
       <Stack.Screen name="Scholarships" component={ScholarshipScreen} />
+      <Stack.Screen name="ScholarshipDetails" component={ScholarshipDetailsScreen} />
+      <Stack.Screen name="FundingTracker" component={FundingTrackerScreen} />
 
       {/* Profile section */}
       <Stack.Screen name="Profile" component={ProfileScreen} />
