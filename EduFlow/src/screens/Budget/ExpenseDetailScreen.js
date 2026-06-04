@@ -66,7 +66,7 @@ const DELETE_REVEAL   = 80;
 const SWIPE_THRESHOLD = 60;
 const BOTTOM_NAV_HEIGHT = 90;
 
-const formatMoney = (n) => `R${Math.round(n || 0).toLocaleString('en-ZA')}`;
+const formatMoney = (n) => `M${Math.round(n || 0).toLocaleString('en-ZA')}`;
 
 const formatAmountInput = (value) => {
   if (!value) return '';

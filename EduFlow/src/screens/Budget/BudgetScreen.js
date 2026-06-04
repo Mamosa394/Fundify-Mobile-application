@@ -64,7 +64,7 @@ const COLORS = {
 };
 
 const formatMoney = (amount) =>
-  `R${Number(amount || 0).toLocaleString('en-ZA')}`;
+  `M${Number(amount || 0).toLocaleString('en-ZA')}`;
 
 // ─── SmartBotIcon ─────────────────────────────────────────────────────────────
 function SmartBotIcon({ onPress, hasInsights }) {

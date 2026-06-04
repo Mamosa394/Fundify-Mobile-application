@@ -1,5 +1,3 @@
-// src/screens/Scholarships/ScholarshipScreen.js
-
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -19,7 +17,7 @@ import {
   GraduationCap,
   Calendar,
   Clock,
-  DollarSign,
+  CoinsIcon,
   MapPin,
   Building,
   Award,
@@ -29,6 +27,7 @@ import {
   TrendingUp,
   Wallet,
   BookOpen,
+  Coins,
 } from 'lucide-react-native';
 import { getAuth } from 'firebase/auth';
 import { 
@@ -230,7 +229,7 @@ const ScholarshipScreen = ({ navigation }) => {
           
           {/* Main Amount */}
           <View style={styles.allowanceHero}>
-            <DollarSign size={28} color={COLORS.success} />
+            <CoinsIcon size={28} color={COLORS.success} />
             <View>
               <Text style={styles.allowanceHeroValue}>M{allowance.monthlyStipend?.toLocaleString()}</Text>
               <Text style={styles.allowanceHeroLabel}>Monthly Living Stipend</Text>
@@ -282,7 +281,7 @@ const ScholarshipScreen = ({ navigation }) => {
               <Text style={styles.progressItemLabel}>Months Remaining</Text>
             </View>
             <View style={styles.progressItem}>
-              <DollarSign size={18} color={COLORS.success} />
+              <CoinsIcon size={18} color={COLORS.success} />
               <Text style={styles.progressItemValue}>M{remaining.remainingStipend?.toLocaleString()}</Text>
               <Text style={styles.progressItemLabel}>Stipend Remaining</Text>
             </View>
