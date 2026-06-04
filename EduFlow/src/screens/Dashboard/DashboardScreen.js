@@ -18,7 +18,10 @@ import {
   TextInput,
   Alert,
   Platform,
+  TouchableOpacity,
 } from 'react-native';
+
+import { useNavigation } from '@react-navigation/native';
 
 import {
   SafeAreaView,
@@ -63,11 +66,11 @@ const COLORS = {
   text: '#0A0A0A',
   muted: '#6B7280',
   black: '#080808',
-  cyan: '#7DD3FC',
+  cyan: '#7dd4fc6d',
   violet: '#C4B5FD',
-  pink: '#F9A8D4',
+  pink: '#f855af52',
   green: '#86EFAC',
-  orange: '#FDBA74',
+  orange: '#fdbb746c',
 };
 
 function fmtMoney(n) {
@@ -91,6 +94,7 @@ function getInitials(name) {
 }
 
 export default function DashboardScreen() {
+  const navigation = useNavigation();
   const isFocused = useIsFocused();
 
   const [loading, setLoading] =
@@ -504,12 +508,19 @@ export default function DashboardScreen() {
             <View style={styles.brandDot} />
             <Text style={styles.brand}>EDUFLOW</Text>
           </View>
+            <View style={styles.topRight}>
+              <View style={styles.livePill}>
+                <View style={styles.liveDot} />
+                
+                {/* Interactive Icon Wrapper */}
+                <TouchableOpacity 
+                  onPress={() => navigation.navigate('Notificationscreen')}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="notifications-outline" size={18} color="black" />
+                </TouchableOpacity>
+              </View>
 
-          <View style={styles.topRight}>
-            <View style={styles.livePill}>
-              <View style={styles.liveDot} />
-              <Text style={styles.liveText}>LIVE</Text>
-            </View>
 
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>
@@ -741,7 +752,7 @@ const styles = StyleSheet.create({
     width: width * 0.6,
     height: width * 0.6,
     borderRadius: 999,
-    backgroundColor: 'rgba(125,211,252,0.18)',
+    backgroundColor: 'rgba(39, 63, 73, 0.18)',
     top: 120,
     right: -120,
   },
@@ -750,7 +761,7 @@ const styles = StyleSheet.create({
     width: width * 0.55,
     height: width * 0.55,
     borderRadius: 999,
-    backgroundColor: 'rgba(196,181,253,0.14)',
+    backgroundColor: 'rgba(39, 35, 55, 0.14)',
     top: 420,
     left: -120,
   },
@@ -759,7 +770,7 @@ const styles = StyleSheet.create({
     width: width * 0.45,
     height: width * 0.45,
     borderRadius: 999,
-    backgroundColor: 'rgba(134,239,172,0.12)',
+    backgroundColor: 'rgba(35, 57, 43, 0.12)',
     bottom: 120,
     right: -80,
   },

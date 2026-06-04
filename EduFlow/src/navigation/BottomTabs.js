@@ -29,7 +29,7 @@ import BudgetSetupWizard from '../screens/Budget/BudgetSetupWizard';
 import ExpenseDetailScreen from '../screens/Budget/ExpenseDetailScreen';
 import AddExpenseModal from '../screens/Budget/AddExpenseModal';
 import AIAdvisorScreen from '../screens/Budget/AIAdvisorScreen';
-import NotificationScreen from '../screens/Notifications/NotificationScreen';
+import NotificationsScreen from '../screens/Notifications/NotificationsScreen';
 
 // Academics sub‑screens (Planner)
 import AcademicScreen from '../screens/Academics/AcademicScreen';
@@ -307,7 +307,7 @@ export default function BottomTabs() {
       />
       <Tab.Screen 
         name="NotificationSettings" 
-        component={NotificationScreen}
+        component={NotificationsScreen}
         options={{
           tabBarButton: () => null, // Hide from tab bar
           tabBarStyle: { display: 'none' }, // Hide tab bar when on this screen

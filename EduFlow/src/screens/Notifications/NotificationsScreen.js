@@ -14,7 +14,16 @@ import {
   Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import Animated, { 
+  FadeInDown, 
+  Layout, 
+  useAnimatedStyle, 
+  useSharedValue, 
+  withSpring, 
+  withTiming, 
+  runOnJS 
+} from 'react-native-reanimated';
+import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import {
   Bell,
   Clock,
@@ -25,11 +34,7 @@ import {
   FileText,
   Calendar,
   GraduationCap,
-  ChevronRight,
   Trash2,
-  Zap,
-  Info,
-  X,
   ChevronLeft,
 } from 'lucide-react-native';
 import {
@@ -50,53 +55,112 @@ const COLORS = {
 };
 
 const NOTIFICATION_META = {
-  assignment_reminder: {
-    icon: FileText,
-    color: '#3B82F6',
-    label: 'Assignment Reminder',
-  },
-  exam_reminder: {
-    icon: Calendar,
-    color: '#6366F1',
-    label: 'Exam Reminder',
-  },
-  gpa_alert: {
-    icon: TrendingDown,
-    color: '#DC2626',
-    label: 'GPA Alert',
-  },
-  grade_update: {
-    icon: TrendingUp,
-    color: '#059669',
-    label: 'Grade Update',
-  },
-  overdue_alert: {
-    icon: AlertTriangle,
-    color: '#DC2626',
-    label: 'Overdue',
-  },
-  daily_study: {
-    icon: Clock,
-    color: '#475569',
-    label: 'Daily Study',
-  },
-  weekly_summary: {
-    icon: CheckCircle2,
-    color: '#059669',
-    label: 'Weekly Summary',
-  },
-  new_assignment: {
-    icon: FileText,
-    color: '#3B82F6',
-    label: 'New Assignment',
-  },
-  default: {
-    icon: Bell,
-    color: '#475569',
-    label: 'Notification',
-  },
+  assignment_reminder: { icon: FileText, color: '#3B82F6', label: 'Assignment Reminder' },
+  exam_reminder: { icon: Calendar, color: '#6366F1', label: 'Exam Reminder' },
+  gpa_alert: { icon: TrendingDown, color: '#DC2626', label: 'GPA Alert' },
+  grade_update: { icon: TrendingUp, color: '#059669', label: 'Grade Update' },
+  overdue_alert: { icon: AlertTriangle, color: '#DC2626', label: 'Overdue' },
+  daily_study: { icon: Clock, color: '#475569', label: 'Daily Study' },
+  weekly_summary: { icon: CheckCircle2, color: '#059669', label: 'Weekly Summary' },
+  new_assignment: { icon: FileText, color: '#3B82F6', label: 'New Assignment' },
+  default: { icon: Bell, color: '#475569', label: 'Notification' },
 };
 
+// --- SWIPEABLE CARD COMPONENT ---
+const SwipeableNotificationCard = ({ notification, onDelete }) => {
+  const { content, triggerInfo, data } = notification;
+  const meta = NOTIFICATION_META[data?.type] || NOTIFICATION_META.default;
+  const Icon = meta.icon;
+  const color = meta.color;
+
+  const translateX = useSharedValue(0);
+  const opacity = useSharedValue(1);
+
+  const panGesture = Gesture.Pan()
+    .onUpdate((event) => {
+      if (event.translationX < 0) {
+        translateX.value = event.translationX;
+      }
+    })
+    .onEnd((event) => {
+      const shouldBeDismissed = event.translationX < -120;
+      if (shouldBeDismissed) {
+        translateX.value = withTiming(-SCREEN_WIDTH, { duration: 200 }, () => {
+          opacity.value = withTiming(0, { duration: 100 }, () => {
+            runOnJS(onDelete)(notification.identifier);
+          });
+        });
+      } else {
+        translateX.value = withSpring(0, { damping: 15 });
+      }
+    });
+
+  const rCardStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  const rIconStyle = useAnimatedStyle(() => {
+    const opacityVal = translateX.value < -60 ? 1 : 0;
+    return { opacity: withTiming(opacityVal) };
+  });
+
+  const rContainerStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+  }));
+
+  return (
+    <Animated.View style={[styles.cardContainer, rContainerStyle]} layout={Layout.delay(50)}>
+      {/* Background Swipe Action Context */}
+      <View style={styles.deleteBackground}>
+        <Animated.View style={[styles.deleteIconWrapper, rIconStyle]}>
+          <Trash2 size={18} color={COLORS.white} />
+        </Animated.View>
+      </View>
+
+      {/* Main Card Frame */}
+      <GestureDetector gesture={panGesture}>
+        <Animated.View style={[styles.notifCard, rCardStyle]}>
+          <View style={styles.notifContent}>
+            <View style={[styles.notifIcon, { backgroundColor: color + '12' }]}>
+              <Icon size={18} color={color} />
+            </View>
+            
+            <View style={styles.notifInfo}>
+              <View style={styles.notifHeader}>
+                <Text style={styles.notifTitle} numberOfLines={1}>
+                  {content?.title || 'Notification'}
+                </Text>
+                <View style={[styles.notifTypeBadge, { backgroundColor: color + '10' }]}>
+                  <Text style={[styles.notifTypeText, { color }]}>{meta.label}</Text>
+                </View>
+              </View>
+
+              <Text style={styles.notifBody} numberOfLines={2}>
+                {content?.body || 'No details'}
+              </Text>
+
+              <View style={styles.notifMeta}>
+                <Clock size={10} color={COLORS.textMuted} />
+                <Text style={[styles.notifMetaText, triggerInfo?.isExpired && { color: COLORS.danger }]}>
+                  {triggerInfo?.text || 'Scheduled'}
+                </Text>
+                {data?.moduleName && (
+                  <>
+                    <View style={styles.notifDot} />
+                    <GraduationCap size={10} color={COLORS.textMuted} />
+                    <Text style={styles.notifMetaText}>{data.moduleName}</Text>
+                  </>
+                )}
+              </View>
+            </View>
+          </View>
+        </Animated.View>
+      </GestureDetector>
+    </Animated.View>
+  );
+};
+
+// --- MAIN SCREEN COMPONENT ---
 const NotificationsScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -110,7 +174,6 @@ const NotificationsScreen = ({ navigation }) => {
     setLoading(true);
     try {
       const scheduled = await getScheduledNotifications();
-      // Add a unique key for each notification
       const withKeys = (scheduled || []).map((n, i) => ({
         ...n,
         uniqueKey: n.identifier || `notif_${i}_${Date.now()}`,
@@ -133,7 +196,7 @@ const NotificationsScreen = ({ navigation }) => {
   const handleDelete = async (identifier) => {
     if (identifier) {
       await cancelNotification(identifier);
-      await loadNotifications();
+      setNotifications(prev => prev.filter(n => n.identifier !== identifier));
     }
   };
 
@@ -149,7 +212,7 @@ const NotificationsScreen = ({ navigation }) => {
           style: 'destructive',
           onPress: async () => {
             await cancelAllNotifications();
-            await loadNotifications();
+            setNotifications([]);
           },
         },
       ]
@@ -158,16 +221,13 @@ const NotificationsScreen = ({ navigation }) => {
 
   const getTriggerInfo = (trigger) => {
     if (!trigger) return { text: 'Now', isExpired: false };
-    
     if (trigger.type === 'daily') {
       return { text: `Daily at ${trigger.hour}:${String(trigger.minute).padStart(2, '0')}`, isExpired: false };
     }
-    
     if (trigger.type === 'weekly') {
       const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       return { text: `Weekly on ${days[trigger.weekday - 1] || 'Sun'}`, isExpired: false };
     }
-    
     if (trigger.date) {
       const date = new Date(trigger.date);
       const now = new Date();
@@ -182,11 +242,9 @@ const NotificationsScreen = ({ navigation }) => {
         isExpired: false 
       };
     }
-    
     return { text: 'Scheduled', isExpired: false };
   };
 
-  // Split notifications
   const activeNotifications = [];
   const expiredNotifications = [];
   
@@ -207,64 +265,6 @@ const NotificationsScreen = ({ navigation }) => {
     );
   }
 
-  const renderNotification = (notification) => {
-    const { content, trigger, triggerInfo, data, uniqueKey } = notification;
-    const meta = NOTIFICATION_META[data?.type] || NOTIFICATION_META.default;
-    const Icon = meta.icon;
-    const color = meta.color;
-
-    return (
-      <Animated.View key={uniqueKey} entering={FadeInUp} style={styles.notifCard}>
-        {/* Left color bar */}
-        <View style={[styles.notifBar, { backgroundColor: color }]} />
-        
-        {/* Content */}
-        <View style={styles.notifContent}>
-          <View style={styles.notifTop}>
-            <View style={[styles.notifIcon, { backgroundColor: color + '12' }]}>
-              <Icon size={18} color={color} />
-            </View>
-            <View style={styles.notifInfo}>
-              <View style={styles.notifHeader}>
-                <Text style={styles.notifTitle} numberOfLines={1}>
-                  {content?.title || 'Notification'}
-                </Text>
-                <View style={[styles.notifTypeBadge, { backgroundColor: color + '10' }]}>
-                  <Text style={[styles.notifTypeText, { color }]}>{meta.label}</Text>
-                </View>
-              </View>
-              <Text style={styles.notifBody} numberOfLines={2}>
-                {content?.body || 'No details'}
-              </Text>
-              <View style={styles.notifMeta}>
-                <Clock size={10} color={COLORS.textMuted} />
-                <Text style={[styles.notifMetaText, triggerInfo?.isExpired && { color: COLORS.danger }]}>
-                  {triggerInfo?.text || 'Scheduled'}
-                </Text>
-                {data?.moduleName && (
-                  <>
-                    <View style={styles.notifDot} />
-                    <GraduationCap size={10} color={COLORS.textMuted} />
-                    <Text style={styles.notifMetaText}>{data.moduleName}</Text>
-                  </>
-                )}
-              </View>
-            </View>
-          </View>
-          
-          {/* Delete button */}
-          <TouchableOpacity 
-            onPress={() => handleDelete(notification.identifier)} 
-            style={styles.deleteBtn}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <X size={14} color={COLORS.textMuted} />
-          </TouchableOpacity>
-        </View>
-      </Animated.View>
-    );
-  };
-
   return (
     <LinearGradient colors={[COLORS.bgStart, COLORS.bgMid, COLORS.bgEnd]} style={styles.container}>
       {/* Header */}
@@ -273,13 +273,14 @@ const NotificationsScreen = ({ navigation }) => {
           <ChevronLeft size={24} color={COLORS.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Notifications</Text>
-        {notifications.length > 0 && (
+        {notifications.length > 0 ? (
           <TouchableOpacity onPress={handleClearAll} style={styles.clearBtn}>
             <Trash2 size={15} color={COLORS.danger} />
             <Text style={styles.clearText}>Clear</Text>
           </TouchableOpacity>
+        ) : (
+          <View style={{ width: 60 }} />
         )}
-        {notifications.length === 0 && <View style={{ width: 60 }} />}
       </View>
 
       <ScrollView
@@ -300,7 +301,7 @@ const NotificationsScreen = ({ navigation }) => {
           </View>
         ) : (
           <>
-            {/* Active Notifications */}
+            {/* Active Sections */}
             {activeNotifications.length > 0 && (
               <View style={styles.section}>
                 <View style={styles.sectionHead}>
@@ -310,11 +311,15 @@ const NotificationsScreen = ({ navigation }) => {
                     <Text style={styles.sectionBadgeText}>{activeNotifications.length}</Text>
                   </View>
                 </View>
-                {activeNotifications.map((n) => renderNotification(n))}
+                {activeNotifications.map((n, index) => (
+                  <Animated.View key={n.uniqueKey} entering={FadeInDown.delay(index * 60).duration(400)}>
+                    <SwipeableNotificationCard notification={n} onDelete={handleDelete} />
+                  </Animated.View>
+                ))}
               </View>
             )}
 
-            {/* Expired Notifications */}
+            {/* Expired Sections */}
             {expiredNotifications.length > 0 && (
               <View style={styles.section}>
                 <View style={styles.sectionHead}>
@@ -324,12 +329,15 @@ const NotificationsScreen = ({ navigation }) => {
                     <Text style={styles.sectionBadgeText}>{expiredNotifications.length}</Text>
                   </View>
                 </View>
-                {expiredNotifications.map((n) => renderNotification(n))}
+                {expiredNotifications.map((n, index) => (
+                  <Animated.View key={n.uniqueKey} entering={FadeInDown.delay(index * 60).duration(400)}>
+                    <SwipeableNotificationCard notification={n} onDelete={handleDelete} />
+                  </Animated.View>
+                ))}
               </View>
             )}
           </>
         )}
-
         <View style={{ height: 100 }} />
       </ScrollView>
     </LinearGradient>
@@ -347,13 +355,13 @@ const styles = StyleSheet.create({
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingTop: 4 },
 
-  // Empty
+  // Empty Board
   emptyState: { alignItems: 'center', paddingTop: 80 },
   emptyIcon: { width: 96, height: 96, borderRadius: 28, backgroundColor: COLORS.surface, justifyContent: 'center', alignItems: 'center', marginBottom: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2 },
   emptyTitle: { fontSize: 20, fontFamily: 'JosefinSans-Bold', color: COLORS.text },
   emptySub: { fontSize: 14, color: COLORS.textSecondary, fontFamily: 'JosefinSans-SemiBold', marginTop: 6, textAlign: 'center', paddingHorizontal: 30, lineHeight: 20 },
 
-  // Section
+  // Sections Head Headers
   section: { marginBottom: 20 },
   sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
   sectionDot: { width: 8, height: 8, borderRadius: 4 },
@@ -361,11 +369,32 @@ const styles = StyleSheet.create({
   sectionBadge: { backgroundColor: COLORS.surfaceAlt, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10 },
   sectionBadgeText: { fontSize: 11, fontFamily: 'JosefinSans-Bold', color: COLORS.textMuted },
 
-  // Card
-  notifCard: { flexDirection: 'row', backgroundColor: COLORS.surface, borderRadius: 14, marginBottom: 8, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.03, shadowRadius: 4, elevation: 1 },
-  notifBar: { width: 3 },
-  notifContent: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', padding: 12 },
-  notifTop: { flex: 1, flexDirection: 'row', gap: 10 },
+  // Interactive Card Construction Layout
+  cardContainer: { position: 'relative', marginBottom: 8 },
+  deleteBackground: { 
+    position: 'absolute', 
+    top: 0, bottom: 0, left: 0, right: 0, 
+    backgroundColor: COLORS.danger, 
+    borderRadius: 14, 
+    flexDirection: 'row', 
+    justifyContent: 'flex-end', 
+    alignItems: 'center', 
+    paddingRight: 20 
+  },
+  deleteIconWrapper: { justifyContent: 'center', alignItems: 'center' },
+
+  notifCard: { 
+    flexDirection: 'row', 
+    backgroundColor: COLORS.surface, 
+    borderRadius: 14, 
+    overflow: 'hidden', 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 1 }, 
+    shadowOpacity: 0.03, 
+    shadowRadius: 4, 
+    elevation: 1 
+  },
+  notifContent: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', padding: 12, gap: 10 },
   notifIcon: { width: 38, height: 38, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   notifInfo: { flex: 1 },
   notifHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 },
@@ -376,7 +405,6 @@ const styles = StyleSheet.create({
   notifMeta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   notifDot: { width: 2.5, height: 2.5, borderRadius: 1.5, backgroundColor: COLORS.textMuted },
   notifMetaText: { fontSize: 10, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textMuted },
-  deleteBtn: { padding: 6, marginLeft: 4, marginTop: 2 },
 });
 
 export default NotificationsScreen;
