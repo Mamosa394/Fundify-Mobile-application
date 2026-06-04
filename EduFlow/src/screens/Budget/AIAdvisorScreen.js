@@ -24,6 +24,7 @@ import {
 import {
   generateInsights,
 } from '../../services/geminiService';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 const { width } = Dimensions.get('window');
 
@@ -47,10 +48,10 @@ const FONTS = {
 };
 
 const INSIGHT_THEME = {
-  warning:  { bg: '#FEF3C7', border: '#F59E0B', text: '#B45309' },
-  tip:      { bg: '#EFF6FF', border: '#3B82F6', text: '#1D4ED8' },
-  positive: { bg: '#F0FDF4', border: '#22C55E', text: '#15803D' },
-  alert:    { bg: '#FFF1F2', border: '#F43F5E', text: '#BE123C' },
+  warning:  { bg: '#FEF3C7', border: '#ffffff', text: '#B45309' },
+  tip:      { bg: '#EFF6FF', border: '#ffffff', text: '#1D4ED8' },
+  positive: { bg: '#F0FDF4', border: '#ffffff', text: '#15803D' },
+  alert:    { bg: '#FFF1F2', border: '#ffffff', text: '#BE123C' },
 };
 
 const CATEGORY_RECOMMENDATIONS = {
@@ -732,7 +733,7 @@ const styles = StyleSheet.create({
 
   insightsSectionTitle: {
     fontSize: 18, fontFamily: FONTS.bold, color: COLORS.text,
-    marginHorizontal: 16, marginBottom: 12,
+    marginHorizontal: 16, marginBottom: 12,borderColor: COLORS.border, borderBottomWidth: 1, paddingBottom: 4,
   },
 
   insightCard: {
@@ -850,7 +851,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'flex-start', gap: 10,
     marginHorizontal: 16, marginBottom: 20,
     backgroundColor: '#EFF6FF', borderRadius: 14, padding: 14,
-    borderLeftWidth: 3, borderLeftColor: '#3B82F6',
+    borderLeftWidth: 3, 
   },
   ruleText: {
     flex: 1, fontSize: 13, fontFamily: FONTS.semiBold, color: '#1D4ED8', lineHeight: 18,

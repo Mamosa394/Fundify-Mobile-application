@@ -14,7 +14,7 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Svg, {
   Circle,
   Defs,
@@ -62,78 +62,9 @@ const COLORS = {
 };
 
 const formatMoney = (amount) =>
-  `M${Number(amount || 0).toLocaleString('en-ZA')}`;
+  `R${Number(amount || 0).toLocaleString('en-ZA')}`;
 
-// AI Advisor Button Component
-function AIAdvisorButton({ onPress, hasInsights }) {
-  const [isPressed, setIsPressed] = useState(false);
-
-  return (
-    <Pressable
-      onPress={onPress}
-      onPressIn={() => setIsPressed(true)}
-      onPressOut={() => setIsPressed(false)}
-      style={({ pressed }) => [
-        styles.aiButton,
-        pressed && styles.aiButtonPressed,
-        isPressed && styles.aiButtonActive,
-      ]}
-    >
-      <LinearGradient
-        colors={['#6C5CE7', '#A29BFE']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[
-          styles.aiButtonGradient,
-          isPressed && styles.aiButtonGradientActive,
-        ]}
-      >
-        <View style={styles.aiIconContainer}>
-          <Ionicons name="chatbubble-ellipses" size={20} color="#FFF" />
-          {hasInsights && (
-            <View style={styles.aiNotificationDot}>
-              <View style={styles.aiNotificationInner} />
-            </View>
-          )}
-        </View>
-        <Text style={styles.aiButtonText}>AI Advisor</Text>
-      </LinearGradient>
-    </Pressable>
-  );
-}
-
-// Add Expense Button Component
-function AddExpenseButton({ onPress }) {
-  const [isPressed, setIsPressed] = useState(false);
-
-  return (
-    <Pressable
-      onPress={onPress}
-      onPressIn={() => setIsPressed(true)}
-      onPressOut={() => setIsPressed(false)}
-      style={({ pressed }) => [
-        styles.addExpenseButton,
-        pressed && styles.addExpenseButtonPressed,
-        isPressed && styles.addExpenseButtonActive,
-      ]}
-    >
-      <LinearGradient
-        colors={['#1C1C1E', '#2C2C2E']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[
-          styles.addExpenseGradient,
-          isPressed && styles.addExpenseGradientActive,
-        ]}
-      >
-        <Ionicons name="add-circle-outline" size={20} color="#FFF" />
-        <Text style={styles.addExpenseButtonText}>Add Expense</Text>
-      </LinearGradient>
-    </Pressable>
-  );
-}
-
-// BudgetRing (Kept as fallback)
+// ─── BudgetRing (Kept as fallback) ────────────────────────────────────────────
 function BudgetRing({ spent = 0, total = 1 }) {
   const size          = 180;
   const strokeWidth   = 14;
@@ -186,7 +117,7 @@ function BudgetRing({ spent = 0, total = 1 }) {
   );
 }
 
-// CategoryRow
+// ─── CategoryRow ──────────────────────────────────────────────────────────────
 function CategoryRow({ item, onPress }) {
   const progress    = Math.min(item.budgeted > 0 ? item.spent / item.budgeted : 0, 1);
   const isOverBudget = progress >= 1;
@@ -250,7 +181,7 @@ function CategoryRow({ item, onPress }) {
   );
 }
 
-// SummaryCard
+// ─── SummaryCard ──────────────────────────────────────────────────────────────
 function SummaryCard({ label, amount, percentage, isPositive, icon, isWarning }) {
   return (
     <View style={styles.summaryCard}>
@@ -276,7 +207,7 @@ function SummaryCard({ label, amount, percentage, isPositive, icon, isWarning })
   );
 }
 
-// Main BudgetScreen
+// ─── BudgetScreen ─────────────────────────────────────────────────────────────
 export default function BudgetScreen() {
   const navigation = useNavigation();
   const isFocused = useIsFocused();
@@ -292,7 +223,7 @@ export default function BudgetScreen() {
   const userId = auth.currentUser?.uid;
   const currentMonth = new Date().toISOString().slice(0, 7);
 
-  // Handle Android back button
+  // ── Handle Android back button ──────────────────────────────────────────
   useEffect(() => {
     if (Platform.OS !== 'android') return;
 
@@ -307,7 +238,7 @@ export default function BudgetScreen() {
     };
   }, []);
 
-  // Real-time listeners
+  // ── Real-time listeners ──────────────────────────────────────────────────
   useEffect(() => {
     if (!userId) {
       console.log('No user logged in');
@@ -403,7 +334,7 @@ export default function BudgetScreen() {
     }, 1000);
   };
 
-  // Delete Budget Function
+  // ── Delete Budget Function ──────────────────────────────────────────────
   const handleDeleteBudget = useCallback(() => {
     Alert.alert(
       'Delete Budget',
@@ -430,6 +361,7 @@ export default function BudgetScreen() {
     try {
       const batch = writeBatch(db);
 
+      // Delete all expenses for the current month
       const expensesRef = collection(db, 'users', userId, 'expenses');
       const expensesQuery = query(expensesRef, where('month', '==', currentMonth));
       const expensesSnapshot = await getDocs(expensesQuery);
@@ -438,17 +370,17 @@ export default function BudgetScreen() {
         batch.delete(doc.ref);
       });
 
+      // Delete the budget document
       const budgetRef = doc(db, 'users', userId, 'budgets', currentMonth);
       batch.delete(budgetRef);
 
+      // Commit the batch
       await batch.commit();
 
       console.log('Budget and expenses deleted successfully');
       
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      
       setDeleting(false);
-      navigation.navigate('BudgetSetupWizard');
       
     } catch (error) {
       console.error('Error deleting budget:', error);
@@ -463,7 +395,7 @@ export default function BudgetScreen() {
     }
   };
 
-  // Derive categories from budget data
+  // ── Derive categories from budget data ──
   const categories = useMemo(() => {
     if (!budget?.categories) return [];
     
@@ -477,12 +409,12 @@ export default function BudgetScreen() {
     }).filter(cat => cat.budgeted > 0 || cat.spent > 0);
   }, [budget]);
 
-  // Derive recent expenses
+  // ── Derive recent expenses ──
   const recentExpenses = useMemo(() => {
     return expenses.slice(0, 5);
   }, [expenses]);
 
-  // Calculate totals
+  // ── Calculate totals ──
   const totalIncome = userProfile?.totalIncome || 
                       userProfile?.income || 
                       budget?.income || 
@@ -497,7 +429,7 @@ export default function BudgetScreen() {
   const expensePercentage = totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0;
   const savingsPercentage = totalIncome > 0 ? Math.round((savingsAmount / totalIncome) * 100) : 0;
   
-  // Smart budget metrics for 3D visualization
+  // ── Smart budget metrics for 3D visualization ──
   const budgetProgress = totalBudget > 0 ? Math.min(totalSpent / totalBudget, 1) : 0;
   const savingsUrgency = totalIncome > 0 ? Math.max(0, 1 - (savingsAmount / totalIncome)) : 0;
   
@@ -588,7 +520,7 @@ export default function BudgetScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
 
-      {/* Scrollable Top Tab Bar */}
+      {/* ── Scrollable Top Tab Bar ── */}
       <ScrollableTopTabBar
         tabs={['Budget', 'Expenses']}
         activeTab="Budget"
@@ -614,23 +546,64 @@ export default function BudgetScreen() {
         }
         contentContainerStyle={[styles.content, { paddingTop: 4 }]}
       >
-        {/* Header with Buttons */}
+        {/* ── Header with Title and Action Buttons ── */}
         <View style={styles.header}>
-          <View>
+          <View style={styles.headerTitleContainer}>
             <Text style={styles.screenTitle}>Budget</Text>
             <Text style={styles.monthLabel}>
               {new Date().toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' })}
             </Text>
           </View>
 
-          {/* Two Separate Buttons - AI Advisor and Add Expense */}
-          <View style={styles.headerButtonsContainer}>
-            <AIAdvisorButton onPress={handleAIPress} hasInsights={hasSmartInsights} />
-            <AddExpenseButton onPress={handleAddExpensePress} />
+          {/* Action Buttons - Add Expense and AI Advisor */}
+          <View style={styles.headerActions}>
+            {/* Add Expense Button - Primary Action */}
+            <Pressable
+              style={({ pressed }) => [
+                styles.addExpenseButton,
+                pressed && styles.addExpenseButtonPressed,
+              ]}
+              onPress={handleAddExpensePress}
+            >
+              <LinearGradient
+                colors={['#1C1C1E', '#2C2C2E']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.addExpenseGradient}
+              >
+                <Ionicons name="add" size={20} color="#FFF" />
+                <Text style={styles.addExpenseButtonText}>Add</Text>
+              </LinearGradient>
+            </Pressable>
+
+            {/* AI Advisor Button - Smart Assistant */}
+            <Pressable
+              style={({ pressed }) => [
+                styles.aiButton,
+                pressed && styles.aiButtonPressed,
+              ]}
+              onPress={handleAIPress}
+            >
+              <LinearGradient
+                colors={['#6C5CE7', '#A29BFE']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.aiButtonGradient}
+              >
+                <View style={styles.aiIconWrapper}>
+                <MaterialCommunityIcons name="robot-outline" size={24} color="black" />
+                  {hasSmartInsights && (
+                    <View style={styles.aiNotificationBadge}>
+                      <View style={styles.aiNotificationDot} />
+                    </View>
+                  )}
+                </View>
+              </LinearGradient>
+            </Pressable>
           </View>
         </View>
 
-        {/* 3D Galaxy Visualization Card */}
+        {/* ── 3D Galaxy Visualization Card ── */}
         <View style={[
           styles.galaxyCard,
           spendingState === 'critical' && styles.galaxyCardCritical,
@@ -702,7 +675,7 @@ export default function BudgetScreen() {
             ]}>
               <View style={styles.galaxyDetailItem}>
                 <Text style={styles.galaxyDetailValue}>
-                  {totalBudget > 0 ? `M${totalBudget.toLocaleString('en-ZA')}` : '—'}
+                  {totalBudget > 0 ? `R${totalBudget.toLocaleString('en-ZA')}` : '—'}
                 </Text>
                 <Text style={styles.galaxyDetailLabel}>Budget</Text>
               </View>
@@ -721,7 +694,7 @@ export default function BudgetScreen() {
           </View>
         </View>
 
-        {/* Summary Row */}
+        {/* ── Summary Row ── */}
         <View style={styles.summaryRow}>
           <SummaryCard
             label="Income"
@@ -747,7 +720,7 @@ export default function BudgetScreen() {
           />
         </View>
 
-        {/* Recent Expenses */}
+        {/* ── Recent Expenses ── */}
         {recentExpenses.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -779,7 +752,7 @@ export default function BudgetScreen() {
           </View>
         )}
 
-        {/* Categories Section */}
+        {/* ── Categories Section ── */}
         {categories.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -804,7 +777,7 @@ export default function BudgetScreen() {
           </View>
         )}
 
-        {/* Delete Budget Button */}
+        {/* ── Delete Budget Button ── */}
         <Pressable
           style={({ pressed }) => [
             styles.deleteButton,
@@ -821,16 +794,13 @@ export default function BudgetScreen() {
           </Text>
         </Pressable>
 
-        {/* CTA Banner -> AI Advisor (removed since we have separate button) */}
-        {/* Keeping for now as alternative but can be removed */}
-
         <View style={styles.bottomSpacing} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// Styles
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -886,121 +856,122 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 4,
   },
+  
+  // ── Header Styles ──
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     marginBottom: 24,
+    paddingTop: 4,
+  },
+  headerTitleContainer: {
+    flex: 1,
+    marginRight: 16,
   },
   screenTitle: {
     fontSize: 34,
     fontWeight: '800',
     color: COLORS.text,
     letterSpacing: -1.5,
+    marginBottom: 2,
   },
   monthLabel: {
     fontSize: 14,
     fontWeight: '600',
     color: COLORS.muted,
-    marginTop: 2,
-  },
-  
-  // Header Buttons Container
-  headerButtonsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  
-  // AI Advisor Button Styles
-  aiButton: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    shadowColor: '#6C5CE7',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  aiButtonPressed: {
-    transform: [{ scale: 0.96 }],
-  },
-  aiButtonActive: {
-    transform: [{ scale: 0.94 }],
-  },
-  aiButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 8,
-  },
-  aiButtonGradientActive: {
-    opacity: 0.9,
-  },
-  aiIconContainer: {
-    position: 'relative',
-  },
-  aiNotificationDot: {
-    position: 'absolute',
-    top: -6,
-    right: -8,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#FF3B30',
-    borderWidth: 1.5,
-    borderColor: '#6C5CE7',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  aiNotificationInner: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#FFF',
-  },
-  aiButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#FFF',
     letterSpacing: -0.2,
   },
-  
-  // Add Expense Button Styles
+
+  // ── Header Actions Container ──
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+
+  // ── Add Expense Button (Primary Action) ──
   addExpenseButton: {
-    borderRadius: 16,
+    borderRadius: 14,
     overflow: 'hidden',
-    shadowColor: COLORS.accent,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 4,
   },
   addExpenseButtonPressed: {
-    transform: [{ scale: 0.96 }],
-  },
-  addExpenseButtonActive: {
-    transform: [{ scale: 0.94 }],
+    transform: [{ scale: 0.95 }],
+    opacity: 0.9,
   },
   addExpenseGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 8,
-  },
-  addExpenseGradientActive: {
-    opacity: 0.9,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 6,
+    borderRadius: 14,
   },
   addExpenseButtonText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700',
     color: '#FFF',
-    letterSpacing: -0.2,
+    letterSpacing: -0.3,
   },
-  
-  // Galaxy Card Styles
+
+  // ── AI Advisor Button (Smart Assistant) ──
+  aiButton: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    shadowColor: '#6C5CE7',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  aiButtonPressed: {
+    transform: [{ scale: 0.95 }],
+    opacity: 0.9,
+  },
+  aiButtonGradient: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  aiIconWrapper: {
+    position: 'relative',
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+     borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  aiNotificationBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -6,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#FF3B30',
+    borderWidth: 2,
+    borderColor: '#6C5CE7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  aiNotificationDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#FFF',
+  },
+
+  // ── Galaxy Card Styles ──
   galaxyCard: {
     height: 300,
     borderRadius: 32,
@@ -1046,6 +1017,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(10, 21, 32, 0.4)',
   },
   
+  // ── Alert Banner ──
   alertBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1144,7 +1116,55 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)',
   },
   
-  // Summary & Content Styles
+  // ── Original Ring Styles ──
+  heroCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 32,
+    paddingVertical: 32,
+    alignItems: 'center',
+    marginBottom: 20,
+    shadowColor: COLORS.cardShadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  ringContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  ringContent: {
+    position: 'absolute',
+    alignItems: 'center',
+  },
+  ringRemaining: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: COLORS.text,
+    letterSpacing: -1,
+  },
+  ringLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.muted,
+    marginTop: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  ringPercentage: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: COLORS.muted,
+    marginTop: 4,
+  },
+  budgetLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.muted,
+    marginTop: 16,
+  },
+  
+  // ── Summary & Content Styles ──
   summaryRow: {
     flexDirection: 'row',
     gap: 10,
@@ -1341,6 +1361,8 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     marginTop: 2,
   },
+  
+  // ── Delete Button ──
   deleteButton: {
     backgroundColor: COLORS.surface,
     borderRadius: 20,
@@ -1377,6 +1399,7 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     marginLeft: 32,
   },
+  
   bottomSpacing: { 
     height: 100,
   },
