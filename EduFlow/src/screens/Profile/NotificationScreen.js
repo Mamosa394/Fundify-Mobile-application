@@ -26,7 +26,7 @@ const COLORS = {
   white: '#FFFFFF',
 };
 
-const NotificationsScreen = ({ navigation }) => {
+const NotificationScreen = ({ navigation }) => {
   const [preferences, setPreferences] = useState({
     pushEnabled: true,
     emailEnabled: true,
@@ -106,4 +106,4 @@ const styles = StyleSheet.create({
   rowLabel: { flex: 1, fontSize: 14, fontFamily: 'JosefinSans-SemiBold', color: COLORS.text },
 });
 
-export default NotificationsScreen;
+export default NotificationScreen;

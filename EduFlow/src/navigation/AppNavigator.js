@@ -12,11 +12,12 @@ import FundingTrackerScreen from '../screens/Scholarships/FundingTrackerScreen';
 
 // Academics screens
 import ModuleGradesTableScreen from '../screens/Academics/ModuleGradesTableScreen';
+import NotificationsScreen from '../screens/Notifications/NotificationsScreen';
 
 // Profile screens
 import ProfileScreen from '../screens/Profile/ProfileScreen';
 import EditProfileScreen from '../screens/Profile/EditProfileScreen';
-import NotificationsScreen from '../screens/Profile/NotificationsScreen';
+import NotificationScreen from '../screens/Profile/NotificationScreen';
 import HelpCenterScreen from '../screens/Profile/HelpCenterScreen';
 import SettingsScreen from '../screens/Profile/SettingsScreen';
 import TermsOfServiceScreen from '../screens/Profile/TermsOfServiceScreen';
@@ -43,7 +44,8 @@ export default function AppNavigator() {
       {/* Profile screens */}
       <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
-      <Stack.Screen name="Notifications" component={NotificationsScreen} />
+      <Stack.Screen name="Notifications" component={NotificationScreen} />
+      <Stack.Screen name="Notificationscreen" component={NotificationsScreen} />
       <Stack.Screen name="HelpCenter" component={HelpCenterScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="TermsOfService" component={TermsOfServiceScreen} />

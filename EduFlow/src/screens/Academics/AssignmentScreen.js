@@ -72,6 +72,7 @@ function BookModel() {
 
   return (
     <>
+    
       <ambientLight intensity={2.5} />
       <directionalLight position={[5, 5, 5]} intensity={1.5} />
       <directionalLight position={[-3, 2, -2]} intensity={0.8} color="#e2e8f0" />
@@ -193,7 +194,7 @@ const AssignmentScreen = () => {
       >
         <View style={styles.canvasContainer}>
           {isFocused && (
-            <Canvas dpr={1} gl={{ antialias: true, alpha: true }} camera={{ position: [0, 0.0, 2.5], fov: 50 }}>
+            <Canvas dpr={1} gl={{ antialias: true, alpha: true }} style={{backgroundColor: '#00000'}} camera={{ position: [0, 0.0, 2.5], fov: 50 }}>
               <Suspense fallback={null}>
                 <BookModel />
               </Suspense>
