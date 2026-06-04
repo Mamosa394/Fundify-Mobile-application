@@ -28,7 +28,6 @@ import * as Haptics       from 'expo-haptics';
 import { SafeAreaView }   from 'react-native-safe-area-context';
 import { StatusBar }      from 'expo-status-bar';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
-import { StackActions } from '@react-navigation/native';
 
 // Firebase imports
 import { 
@@ -37,7 +36,6 @@ import {
   query, 
   where, 
   onSnapshot,
-  deleteDoc,
   getDocs,
   writeBatch,
 } from 'firebase/firestore';
@@ -92,9 +90,7 @@ function SmartBotIcon({ onPress, hasInsights }) {
       >
         <View style={styles.botIconContainer}>
           <Ionicons name="chatbubble-ellipses" size={20} color="#FFF" />
-          {/* Pulse animation ring */}
           <View style={styles.botPulseRing} />
-          {/* Notification dot for new insights */}
           {hasInsights && (
             <View style={styles.botNotificationDot}>
               <View style={styles.botNotificationInner} />
@@ -360,14 +356,12 @@ export default function BudgetScreen() {
     };
   }, [userId, currentMonth]);
 
-  // Redirect to setup wizard if no budget exists
-  useEffect(() => {
-    if (needsSetup && !loading) {
-      navigation.dispatch(
-        StackActions.replace('BudgetSetupWizard')
-      );
-    }
-  }, [needsSetup, loading, navigation]);
+  // Redirect to setup wizard if no budget exists - FIXED
+ useEffect(() => {
+  if (needsSetup && !loading && !deleting) {
+    navigation.navigate('BudgetSetupWizard');
+  }
+}, [needsSetup, loading, deleting, navigation]);
 
   // Manual refresh
   const onRefresh = async () => {
@@ -398,47 +392,48 @@ export default function BudgetScreen() {
     );
   }, [userId, currentMonth]);
 
-  const deleteCurrentBudget = async () => {
-    if (!userId) return;
+const deleteCurrentBudget = async () => {
+  if (!userId) return;
 
-    setDeleting(true);
-    try {
-      const batch = writeBatch(db);
+  setDeleting(true);
+  try {
+    const batch = writeBatch(db);
 
-      // Delete all expenses for the current month
-      const expensesRef = collection(db, 'users', userId, 'expenses');
-      const expensesQuery = query(expensesRef, where('month', '==', currentMonth));
-      const expensesSnapshot = await getDocs(expensesQuery);
-      
-      expensesSnapshot.docs.forEach((doc) => {
-        batch.delete(doc.ref);
-      });
+    // Delete all expenses for the current month
+    const expensesRef = collection(db, 'users', userId, 'expenses');
+    const expensesQuery = query(expensesRef, where('month', '==', currentMonth));
+    const expensesSnapshot = await getDocs(expensesQuery);
+    
+    expensesSnapshot.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
 
-      // Delete the budget document
-      const budgetRef = doc(db, 'users', userId, 'budgets', currentMonth);
-      batch.delete(budgetRef);
+    // Delete the budget document
+    const budgetRef = doc(db, 'users', userId, 'budgets', currentMonth);
+    batch.delete(budgetRef);
 
-      // Commit the batch
-      await batch.commit();
+    // Commit the batch
+    await batch.commit();
 
-      console.log('Budget and expenses deleted successfully');
-      
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      
-      // The real-time listener will detect the budget is gone and redirect to setup wizard
-    } catch (error) {
-      console.error('Error deleting budget:', error);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      
-      Alert.alert(
-        'Error',
-        'Failed to delete budget. Please try again.',
-        [{ text: 'OK' }]
-      );
-    } finally {
-      setDeleting(false);
-    }
-  };
+    console.log('Budget and expenses deleted successfully');
+    
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    
+    setDeleting(false);
+    navigation.navigate('BudgetSetupWizard');
+    
+  } catch (error) {
+    console.error('Error deleting budget:', error);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    
+    Alert.alert(
+      'Error',
+      'Failed to delete budget. Please try again.',
+      [{ text: 'OK' }]
+    );
+    setDeleting(false);
+  }
+};
 
   // ── Derive categories from budget data ──
   const categories = useMemo(() => {
@@ -504,7 +499,6 @@ export default function BudgetScreen() {
   // Handle smart bot press
   const handleSmartBotPress = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    // Navigate to AI Advisor with context
     navigation.navigate('AIAdvisor', {
       budgetContext: {
         spendingState,
@@ -541,9 +535,7 @@ export default function BudgetScreen() {
           style={styles.setupButton}
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            navigation.dispatch(
-              StackActions.replace('BudgetSetupWizard')
-            );
+            navigation.navigate('BudgetSetupWizard');
           }}
         >
           <LinearGradient
@@ -597,71 +589,40 @@ export default function BudgetScreen() {
             </Text>
           </View>
 
-          <View style={styles.headerButtonsContainer}>
-            {/* Combined Robot + Add Button */}
-            <Pressable
-              style={({ pressed }) => [
-                styles.combinedButton,
-                pressed && styles.combinedButtonPressed,
-              ]}
-            >
-              <LinearGradient
-                colors={['#1C1C1E', '#2C2C2E']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.combinedButtonGradient}
-              >
-                {/* Robot Icon */}
-                <Pressable
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    navigation.navigate('AIAdvisor', {
-                      budgetContext: {
-                        spendingState,
-                        budgetProgress,
-                        totalSpent,
-                        totalBudget,
-                        remaining,
-                      }
-                    });
-                  }}
-                  style={({ pressed }) => [
-                    styles.robotIconSection,
-                    pressed && styles.robotIconSectionPressed,
-                  ]}
-                >
-                  <Ionicons 
-                    name="hardware-chip-outline" 
-                    size={18} 
-                    color="#A29BFE" 
-                  />
-                  {hasSmartInsights && (
-                    <View style={styles.robotNotificationDot}>
-                      <View style={styles.robotNotificationInner} />
-                    </View>
-                  )}
-                </Pressable>
-
-                {/* Divider */}
-                <View style={styles.buttonDivider} />
-
-                {/* Add Icon */}
-                <Pressable
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    navigation.navigate('AddExpenseModal');
-                  }}
-                  style={({ pressed }) => [
-                    styles.addIconSection,
-                    pressed && styles.addIconSectionPressed,
-                  ]}
-                >
-                  <Ionicons name="add" size={22} color="#FFF" />
-                </Pressable>
-              </LinearGradient>
-            </Pressable>
-          </View>
-        </View>
+      <View style={styles.headerButtonsContainer}>
+  {/* Single Add Expense Button with Bot Icon */}
+  <Pressable
+    onPress={() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      navigation.navigate('AddExpenseModal');
+    }}
+    style={({ pressed }) => [
+      styles.addExpenseButton,
+      pressed && styles.addExpenseButtonPressed,
+    ]}
+  >
+    <LinearGradient
+      colors={['#1C1C1E', '#2C2C2E']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.addExpenseGradient}
+    >
+      {/* Bot Icon - decorative, no separate onPress */}
+      <View style={styles.botIconWrap}>
+        <Ionicons name="logo-electron" size={14} color="#A29BFE" />
+      </View>
+      
+      {/* Divider */}
+      <View style={styles.buttonDivider} />
+      
+      {/* Add Icon */}
+      <View style={styles.addIconWrap}>
+        <Ionicons name="add" size={22} color="#FFF" />
+      </View>
+    </LinearGradient>
+  </Pressable>
+</View>
+</View>
 
         {/* ── 3D Galaxy Visualization Card ── */}
         <View style={[
@@ -991,6 +952,62 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 16,
   },
+
+  // ── Header Buttons Container ──
+headerButtonsContainer: {
+  flexDirection: 'row',
+  alignItems: 'center',
+},
+
+// ── Add Expense Button ──
+addExpenseButton: {
+  borderRadius: 16,
+  overflow: 'hidden',
+  shadowColor: COLORS.accent,
+  shadowOffset: { width: 0, height: 8 },
+  shadowOpacity: 0.15,
+  shadowRadius: 16,
+  elevation: 8,
+},
+addExpenseButtonPressed: {
+  opacity: 0.8,
+  transform: [{ scale: 0.96 }],
+},
+addExpenseGradient: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  paddingHorizontal: 4,
+  paddingVertical: 4,
+  borderRadius: 16,
+},
+
+// ── Bot Icon Wrap (decorative, no navigation) ──
+botIconWrap: {
+  width: 40,
+  height: 40,
+  borderRadius: 12,
+  justifyContent: 'center',
+  alignItems: 'center',
+  backgroundColor: 'rgba(162, 155, 254, 0.15)',
+},
+
+// ── Add Icon Wrap ──
+addIconWrap: {
+  width: 40,
+  height: 40,
+  borderRadius: 12,
+  justifyContent: 'center',
+  alignItems: 'center',
+  backgroundColor: 'rgba(255, 255, 255, 0.15)',
+},
+
+// ── Button Divider ──
+buttonDivider: {
+  width: 1,
+  height: 24,
+  backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  marginHorizontal: 2,
+},
   
   // ── Robot Icon Section ──
   robotIconSection: {
@@ -1157,7 +1174,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 16,
     elevation: 4,
-    transition: 'all 0.3s ease',
   },
   galaxyCardCritical: {
     backgroundColor: '#1A0A0A',
