@@ -1,3 +1,5 @@
+// src/screens/AIAdvisor/AIAdvisorScreen.js
+
 import React, {
   useState, useEffect, useRef, useCallback,
 } from 'react';
@@ -13,21 +15,36 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar }         from 'expo-status-bar';
 import { useFocusEffect }    from '@react-navigation/native';
 import { auth }              from '../../services/firebase';
-import { getCurrentBudget, getExpenses } from '../../services/budgetService';
+import { 
+  getCurrentBudget, 
+  getExpenses,
+  getUserProfile,
+  BUDGET_CATEGORIES,
+} from '../../services/budgetService';
 import {
-  generateInsights, streamChatMessage,
-  getStoredApiKey, saveApiKey, clearApiKey,
-} from '../../../src/services/geminiService';
+  generateInsights,
+} from '../../services/geminiService';
 
 const { width } = Dimensions.get('window');
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 const COLORS = {
-  background: '#F8FAFC', surface: '#FFFFFF', text: '#0F172A',
-  muted: '#64748B', positive: '#34C759', negative: '#FF3B30',
-  accent: '#1C1C1E', warning: '#F5A623', border: '#E2E8F0', inputBg: '#F8FAFC',
+  background: '#F8FAFC',
+  surface: '#FFFFFF',
+  text: '#0F172A',
+  muted: '#64748B',
+  positive: '#34C759',
+  negative: '#FF3B30',
+  accent: '#1C1C1E',
+  warning: '#F5A623',
+  border: '#E2E8F0',
+  inputBg: '#F8FAFC',
 };
-const FONTS = { bold: 'JosefinSans-Bold', semiBold: 'JosefinSans-SemiBold' };
+
+const FONTS = {
+  bold: 'JosefinSans-Bold',
+  semiBold: 'JosefinSans-SemiBold',
+};
 
 const INSIGHT_THEME = {
   warning:  { bg: '#FEF3C7', border: '#F59E0B', text: '#B45309' },
@@ -36,12 +53,64 @@ const INSIGHT_THEME = {
   alert:    { bg: '#FFF1F2', border: '#F43F5E', text: '#BE123C' },
 };
 
-const SUGGESTED_QUESTIONS = [
-  'How can I save more this month?',
-  'Am I spending too much on food?',
-  'How do I budget for transport?',
-  'What should I cut back on?',
-];
+// ─── Smart Budget Recommendations ─────────────────────────────────────────────
+// These are AI-like recommendations based on student budgeting best practices
+const CATEGORY_RECOMMENDATIONS = {
+  food: { 
+    type: 'needs', 
+    percent: 0.18, 
+    tip: 'Essential for student life. Cook at home to save.',
+    icon: 'restaurant-outline',
+  },
+  transport: { 
+    type: 'needs', 
+    percent: 0.10, 
+    tip: 'Use student discounts and public transport.',
+    icon: 'bus-outline',
+  },
+  data: { 
+    type: 'needs', 
+    percent: 0.04, 
+    tip: 'Compare data plans. WiFi on campus saves money.',
+    icon: 'wifi-outline',
+  },
+  books: { 
+    type: 'needs', 
+    percent: 0.06, 
+    tip: 'Buy second-hand or use library resources.',
+    icon: 'book-outline',
+  },
+  accommodation: { 
+    type: 'needs', 
+    percent: 0.25, 
+    tip: 'Largest expense. Consider sharing or student housing.',
+    icon: 'home-outline',
+  },
+  health: { 
+    type: 'needs', 
+    percent: 0.05, 
+    tip: 'Use campus clinic. Prevention is cheaper than cure.',
+    icon: 'fitness-outline',
+  },
+  entertainment: { 
+    type: 'wants', 
+    percent: 0.08, 
+    tip: 'Look for student nights and free campus events.',
+    icon: 'game-controller-outline',
+  },
+  savings: { 
+    type: 'savings', 
+    percent: 0.20, 
+    tip: 'Pay yourself first! Build an emergency fund.',
+    icon: 'save-outline',
+  },
+  other: { 
+    type: 'wants', 
+    percent: 0.04, 
+    tip: 'Keep miscellaneous spending under control.',
+    icon: 'apps-outline',
+  },
+};
 
 // ─── InsightCard ──────────────────────────────────────────────────────────────
 function InsightCard({ insight, index }) {
@@ -97,123 +166,33 @@ function ScoreBadge({ score, label, summary }) {
   );
 }
 
-// ─── TypingIndicator ──────────────────────────────────────────────────────────
-function TypingIndicator() {
-  const d = [0, 1, 2].map(() => useRef(new Animated.Value(0)).current);
-  useEffect(() => {
-    d.forEach((dot, i) => {
-      Animated.loop(Animated.sequence([
-        Animated.delay(i * 140),
-        Animated.timing(dot, { toValue: -5, duration: 270, useNativeDriver: true }),
-        Animated.timing(dot, { toValue: 0,  duration: 270, useNativeDriver: true }),
-        Animated.delay(480),
-      ])).start();
-    });
-    return () => d.forEach(dot => dot.stopAnimation());
-  }, []);
-
+// ─── BudgetPlanCard ───────────────────────────────────────────────────────────
+function BudgetPlanCard({ category, recommended, tip, icon }) {
   return (
-    <View style={styles.bubbleRow}>
-      <View style={styles.aiAvatar}><Text style={styles.aiAvatarText}>F</Text></View>
-      <View style={[styles.bubble, styles.bubbleAI, styles.typingBubble]}>
-        {d.map((dot, i) => (
-          <Animated.View key={i} style={[styles.typingDot, { transform: [{ translateY: dot }] }]} />
-        ))}
-      </View>
-    </View>
-  );
-}
-
-// ─── ChatBubble ───────────────────────────────────────────────────────────────
-function ChatBubble({ message, isStreaming }) {
-  const isUser = message.role === 'user';
-  return (
-    <View style={[styles.bubbleRow, isUser && styles.bubbleRowUser]}>
-      {!isUser && (
-        <View style={styles.aiAvatar}><Text style={styles.aiAvatarText}>F</Text></View>
-      )}
-      <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAI]}>
-        <Text style={[styles.bubbleText, isUser && styles.bubbleTextUser]}>
-          {message.content}
-          {isStreaming && message.content ? <Text style={styles.cursor}>▌</Text> : null}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-// ─── SetupBanner ──────────────────────────────────────────────────────────────
-function SetupBanner({ onSaved }) {
-  const [key,     setKey]     = useState('');
-  const [showKey, setShowKey] = useState(false);
-  const [saving,  setSaving]  = useState(false);
-  const [error,   setError]   = useState('');
-
-  const valid = key.trim().length > 30;
-
-  const handleSave = async () => {
-    if (!valid) return;
-    setSaving(true);
-    setError('');
-    try {
-      await saveApiKey(key.trim());
-      onSaved(key.trim());
-    } catch (e) {
-      setError('Could not save key. Try again.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <View style={styles.setupBanner}>
-      <LinearGradient colors={['#1C1C1E', '#2C2C2E']} style={styles.setupGradient}>
-        <Ionicons name="key-outline" size={36} color="#FFF" />
-        <Text style={styles.setupTitle}>Connect Gemini AI</Text>
-        <Text style={styles.setupSubtitle}>
-          Get a FREE key from{'\n'}
-          <Text style={{ color: '#60A5FA' }}>aistudio.google.com/apikey</Text>
-          {'\n'}Completely free — no payment needed!
-        </Text>
-
-        <View style={styles.setupInputRow}>
-          <TextInput
-            style={styles.setupInput}
-            value={key}
-            onChangeText={setKey}
-            placeholder="AIza... (paste your key here)"
-            placeholderTextColor="rgba(255,255,255,0.25)"
-            secureTextEntry={!showKey}
-            autoCapitalize="none"
-            autoCorrect={false}
-            selectionColor="#FFF"
-          />
-          <Pressable onPress={() => setShowKey(v => !v)} style={styles.eyeBtn}>
-            <Ionicons
-              name={showKey ? 'eye-off-outline' : 'eye-outline'}
-              size={18}
-              color="rgba(255,255,255,0.5)"
-            />
-          </Pressable>
+    <View style={styles.planCard}>
+      <View style={styles.planHeader}>
+        <View style={styles.planCategoryInfo}>
+          <View style={[styles.planDot, { backgroundColor: category.color }]} />
+          <Text style={styles.planCategoryName}>{category.name}</Text>
         </View>
-
-        {error ? <Text style={styles.setupError}>{error}</Text> : null}
-
-        <Pressable
-          style={[styles.setupBtn, (!valid || saving) && { opacity: 0.4 }]}
-          onPress={handleSave}
-          disabled={!valid || saving}
-        >
-          <Text style={styles.setupBtnText}>
-            {saving ? 'Saving…' : 'Activate AI Advisor'}
-          </Text>
-        </Pressable>
-
-        <View style={styles.setupNote}>
-          <Ionicons name="lock-closed-outline" size={12} color="rgba(255,255,255,0.4)" />
-          <Text style={styles.setupNoteText}>Stored in secure device storage — never in your code</Text>
-        </View>
-      </LinearGradient>
+        <Text style={styles.planRecommended}>R{recommended.toLocaleString()}</Text>
+      </View>
+      
+      {/* Progress bar showing percentage of income */}
+      <View style={styles.planProgressTrack}>
+        <View style={[
+          styles.planProgressFill, 
+          { 
+            width: `${Math.min((recommended / (recommended * 5)) * 100, 100)}%`,
+            backgroundColor: category.color,
+          }
+        ]} />
+      </View>
+      
+      <View style={styles.planTipRow}>
+        <Ionicons name="bulb-outline" size={14} color={COLORS.warning} />
+        <Text style={styles.planTipText}>{tip}</Text>
+      </View>
     </View>
   );
 }
@@ -223,45 +202,36 @@ export default function AIAdvisorScreen({ navigation }) {
   const insets = useSafeAreaInsets();
 
   const [activeTab,      setActiveTab]      = useState('insights');
-  const [apiKey,         setApiKey]         = useState(null);
-  const [hasKey,         setHasKey]         = useState(false);
   const [budgetData,     setBudgetData]     = useState(null);
   const [expenses,       setExpenses]       = useState([]);
+  const [userProfile,    setUserProfile]    = useState(null);
   const [insights,       setInsights]       = useState(null);
   const [insightsError,  setInsightsError]  = useState(null);
   const [loadingData,    setLoadingData]    = useState(true);
   const [loadingAI,      setLoadingAI]      = useState(false);
+  const [budgetPlan,     setBudgetPlan]     = useState(null);
 
-  // Chat state
-  const [chatMessages,   setChatMessages]   = useState([]);
-  const [chatInput,      setChatInput]      = useState('');
-  const [isTyping,       setIsTyping]       = useState(false);
-  const [streamingId,    setStreamingId]    = useState(null);
-  const [isStreamingActive, setIsStreamingActive] = useState(false);
-
-  const chatRef   = useRef(null);
-  const userId    = auth.currentUser?.uid;
+  const userId = auth.currentUser?.uid;
 
   // ── Bootstrap ──
   useEffect(() => {
     (async () => {
       try {
-        const [key, budget, expData] = await Promise.all([
-          getStoredApiKey(),
+        const [budget, expData, profile] = await Promise.all([
           getCurrentBudget(userId),
           getExpenses(userId),
+          getUserProfile(userId),
         ]);
 
-        if (key) {
-          setApiKey(key);
-          setHasKey(true);
-          setBudgetData(budget);
-          setExpenses(expData || []);
-          // Generate insights immediately
-          runInsights(key, budget, expData || []);
-        } else {
-          setBudgetData(budget);
-          setExpenses(expData || []);
+        setBudgetData(budget);
+        setExpenses(expData || []);
+        setUserProfile(profile);
+
+        // Generate plan regardless of budget existence - just need income
+        generateBudgetPlan(profile, expData || []);
+
+        if (budget) {
+          runInsights(budget, expData || []);
         }
       } catch (e) {
         console.error('AIAdvisor init:', e);
@@ -271,119 +241,116 @@ export default function AIAdvisorScreen({ navigation }) {
     })();
   }, []);
 
-  useFocusEffect(useCallback(() => {
-    // Refresh budget data when tab refocused
-    (async () => {
-      try {
-        const [budget, expData] = await Promise.all([
-          getCurrentBudget(userId), 
-          getExpenses(userId),
-        ]);
-        setBudgetData(budget);
-        setExpenses(expData || []);
-        
-        // Refresh insights if we have a key and budget data
-        if (hasKey && budget) {
-          runInsights(apiKey, budget, expData || []);
-        }
-      } catch (e) { 
-        console.log('Refresh error:', e);
-      }
-    })();
-  }, [userId, hasKey]));
+  // ── Refresh on focus ──
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        try {
+          const [budget, expData, profile] = await Promise.all([
+            getCurrentBudget(userId),
+            getExpenses(userId),
+            getUserProfile(userId),
+          ]);
 
-  const runInsights = async (key, budget, expData) => {
-    if (!key || !budget) return;
-    
+          setBudgetData(budget);
+          setExpenses(expData || []);
+          setUserProfile(profile);
+
+          generateBudgetPlan(profile, expData || []);
+
+          if (budget) {
+            runInsights(budget, expData || []);
+          }
+        } catch (e) {
+          console.log('Refresh error:', e);
+        }
+      })();
+    }, [userId])
+  );
+
+  // ── AI Insights ──
+  const runInsights = async (budget, expData) => {
+    if (!budget) return;
+
     setLoadingAI(true);
     setInsightsError(null);
+    
     try {
-      const result = await generateInsights(budget, expData, key);
+      const result = await generateInsights(budget, expData || []);
       setInsights(result);
     } catch (e) {
       console.error('Insights error:', e);
-      setInsightsError(e.message || 'Could not load insights. Check your API key.');
+      setInsightsError(e.message || 'Could not load insights.');
     } finally {
       setLoadingAI(false);
     }
   };
 
-  const handleKeySaved = (key) => {
-    setApiKey(key);
-    setHasKey(true);
-    if (budgetData) runInsights(key, budgetData, expenses);
-  };
-
-  // ── Send chat message ──
-  const sendMessage = async (text) => {
-    const msg = (text ?? chatInput).trim();
-    if (!msg || isTyping || isStreamingActive) return;
-
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setChatInput('');
-
-    const userMsg = { role: 'user', content: msg, id: `u${Date.now()}` };
-    const updatedLog = [...chatMessages, userMsg];
-    setChatMessages(updatedLog);
-    setIsTyping(true);
-    setIsStreamingActive(true);
-
-    const streamId = `a${Date.now()}`;
-    setChatMessages(prev => [...prev, { role: 'assistant', content: '', id: streamId }]);
-    setStreamingId(streamId);
+  // ── Generate Smart Budget Plan (AI-like recommendations) ──
+  const generateBudgetPlan = (profile, expData) => {
+    // Get total income from profile or fallback
+    const totalIncome = profile?.totalIncome || profile?.income || 0;
     
-    setTimeout(() => chatRef.current?.scrollToEnd({ animated: true }), 80);
-
-    const apiMsgs = updatedLog.map(({ role, content }) => ({ role, content }));
-
-    try {
-      await streamChatMessage(
-        apiMsgs, budgetData, expenses, apiKey,
-        (chunk, fullText) => {
-          setChatMessages(prev =>
-            prev.map(m => m.id === streamId ? { ...m, content: fullText } : m)
-          );
-          chatRef.current?.scrollToEnd({ animated: false });
-        },
-        (finalText) => {
-          setChatMessages(prev =>
-            prev.map(m => m.id === streamId ? { ...m, content: finalText } : m)
-          );
-          setStreamingId(null);
-          setIsTyping(false);
-          setIsStreamingActive(false);
-          chatRef.current?.scrollToEnd({ animated: true });
-        },
-        (err) => {
-          console.error('chat stream error:', err);
-          let errorMessage = 'Sorry, something went wrong. Please try again.';
-          
-          if (err.message?.includes('API key not valid') || err.message?.includes('403')) {
-            errorMessage = '⚠️ Invalid API key. Please go back and re-enter your Gemini key.';
-          } else if (err.message?.includes('quota') || err.message?.includes('429')) {
-            errorMessage = '⏳ Rate limit reached. Please wait a moment and try again.';
-          } else if (err.message?.includes('network') || err.message?.includes('fetch')) {
-            errorMessage = '📡 Network error. Check your connection and try again.';
-          }
-          
-          setChatMessages(prev =>
-            prev.map(m => m.id === streamId
-              ? { ...m, content: errorMessage, error: true }
-              : m
-            )
-          );
-          setStreamingId(null);
-          setIsTyping(false);
-          setIsStreamingActive(false);
-        },
-      );
-    } catch (error) {
-      console.error('Send message error:', error);
-      setIsTyping(false);
-      setIsStreamingActive(false);
-      setStreamingId(null);
+    if (totalIncome <= 0) {
+      setBudgetPlan(null);
+      return;
     }
+
+    // Generate pure recommendations based on best practices
+    // NOT using the user's current budget allocations
+    const planCategories = BUDGET_CATEGORIES.map(cat => {
+      const recommendation = CATEGORY_RECOMMENDATIONS[cat.id];
+      
+      if (!recommendation) {
+        return {
+          ...cat,
+          recommended: 0,
+          type: 'needs',
+          tip: 'Track this category carefully.',
+        };
+      }
+
+      const recommendedAmount = Math.round(totalIncome * recommendation.percent);
+      
+      return {
+        ...cat,
+        recommended: recommendedAmount,
+        type: recommendation.type,
+        tip: recommendation.tip,
+      };
+    });
+
+    // Calculate totals for the 50/30/20 summary
+    const needsTotal = planCategories
+      .filter(c => c.type === 'needs')
+      .reduce((sum, c) => sum + c.recommended, 0);
+    
+    const wantsTotal = planCategories
+      .filter(c => c.type === 'wants')
+      .reduce((sum, c) => sum + c.recommended, 0);
+    
+    const savingsTotal = planCategories
+      .filter(c => c.type === 'savings')
+      .reduce((sum, c) => sum + c.recommended, 0);
+
+    // Calculate actual percentages
+    const needsPercent = Math.round((needsTotal / totalIncome) * 100);
+    const wantsPercent = Math.round((wantsTotal / totalIncome) * 100);
+    const savingsPercent = Math.round((savingsTotal / totalIncome) * 100);
+
+    setBudgetPlan({
+      categories: planCategories.filter(c => c.recommended > 0),
+      totalIncome,
+      needsTotal,
+      wantsTotal,
+      savingsTotal,
+      needsPercent,
+      wantsPercent,
+      savingsPercent,
+    });
   };
+
+  const formatMoney = (amount) => `R${Number(amount || 0).toLocaleString('en-ZA')}`;
 
   // ── Loading screen ──
   if (loadingData) {
@@ -420,58 +387,51 @@ export default function AIAdvisorScreen({ navigation }) {
           </View>
         </View>
 
-        {hasKey ? (
-          <Pressable
-            style={styles.refreshBtn}
-            onPress={() => runInsights(apiKey, budgetData, expenses)}
-          >
-            <Ionicons name="refresh-outline" size={20} color={COLORS.muted} />
-          </Pressable>
-        ) : <View style={{ width: 40 }} />}
+        <Pressable
+          style={styles.refreshBtn}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            if (budgetData) {
+              runInsights(budgetData, expenses);
+            }
+            generateBudgetPlan(userProfile, expenses);
+          }}
+        >
+          <Ionicons name="refresh-outline" size={20} color={COLORS.muted} />
+        </Pressable>
       </View>
 
       {/* Tab Bar */}
-      {hasKey && (
-        <View style={styles.tabBar}>
-          {[
-            { key: 'insights', label: 'Insights', icon: 'bulb-outline' },
-            { key: 'chat',     label: 'Ask Fin',  icon: 'chatbubble-ellipses-outline' },
-          ].map(tab => (
-            <Pressable
-              key={tab.key}
-              style={[styles.tab, activeTab === tab.key && styles.tabActive]}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setActiveTab(tab.key);
-              }}
-            >
-              <Ionicons
-                name={tab.icon}
-                size={16}
-                color={activeTab === tab.key ? COLORS.text : COLORS.muted}
-              />
-              <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
-                {tab.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      )}
+      <View style={styles.tabBar}>
+        {[
+          { key: 'insights', label: 'Insights', icon: 'bulb-outline' },
+          { key: 'plan',     label: 'Budget Plan', icon: 'calculator-outline' },
+        ].map(tab => (
+          <Pressable
+            key={tab.key}
+            style={[styles.tab, activeTab === tab.key && styles.tabActive]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setActiveTab(tab.key);
+            }}
+          >
+            <Ionicons
+              name={tab.icon}
+              size={16}
+              color={activeTab === tab.key ? COLORS.text : COLORS.muted}
+            />
+            <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
+              {tab.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
 
-      {/* ─────────────── No API Key ─────────────── */}
-      {!hasKey ? (
-        <ScrollView
-          contentContainerStyle={[styles.setupScroll, { paddingBottom: insets.bottom + 24 }]}
-          showsVerticalScrollIndicator={false}
-        >
-          <SetupBanner onSaved={handleKeySaved} />
-        </ScrollView>
-
-      /* ─────────────── Insights Tab ─────────────── */
-      ) : activeTab === 'insights' ? (
+      {/* ─────────────── Insights Tab ─────────────── */}
+      {activeTab === 'insights' ? (
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.insightsScroll, { paddingBottom: insets.bottom + 24 }]}
+          contentContainerStyle={[styles.insightsScroll, { paddingBottom: insets.bottom + 120 }]}
         >
           {loadingAI ? (
             <View style={styles.aiLoadingBox}>
@@ -487,7 +447,7 @@ export default function AIAdvisorScreen({ navigation }) {
               <Text style={styles.errorText}>{insightsError}</Text>
               <Pressable
                 style={styles.retryBtn}
-                onPress={() => runInsights(apiKey, budgetData, expenses)}
+                onPress={() => budgetData && runInsights(budgetData, expenses)}
               >
                 <Text style={styles.retryBtnText}>Try Again</Text>
               </Pressable>
@@ -503,93 +463,135 @@ export default function AIAdvisorScreen({ navigation }) {
               {insights.insights?.map((item, i) => (
                 <InsightCard key={item.id || i} insight={item} index={i} />
               ))}
-
-              {/* Settings row */}
-              <Pressable
-                style={styles.keySettingsRow}
-                onPress={async () => {
-                  await clearApiKey();
-                  setHasKey(false);
-                  setApiKey(null);
-                  setInsights(null);
-                  setChatMessages([]);
-                }}
-              >
-                <Ionicons name="key-outline" size={14} color={COLORS.muted} />
-                <Text style={styles.keySettingsText}>Change API Key</Text>
-              </Pressable>
             </>
-          ) : null}
-        </ScrollView>
-
-      /* ─────────────── Chat Tab ─────────────── */
-      ) : (
-        <KeyboardAvoidingView
-          style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={insets.top + 110}
-        >
-          <FlatList
-            ref={chatRef}
-            data={chatMessages}
-            keyExtractor={item => item.id}
-            renderItem={({ item }) => (
-              <ChatBubble
-                message={item}
-                isStreaming={item.id === streamingId}
-              />
-            )}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={[
-              styles.chatContent,
-              chatMessages.length === 0 && styles.chatContentEmpty,
-            ]}
-            ListEmptyComponent={
-              <View style={styles.chatEmptyState}>
-                <Text style={styles.chatEmptyEmoji}>🎓</Text>
-                <Text style={styles.chatEmptyTitle}>Ask Fin anything</Text>
-                <Text style={styles.chatEmptySubtitle}>
-                  Your personal student budget advisor
-                </Text>
-                <View style={styles.suggestionsWrap}>
-                  {SUGGESTED_QUESTIONS.map((q, i) => (
-                    <Pressable
-                      key={i}
-                      style={styles.suggestionChip}
-                      onPress={() => sendMessage(q)}
-                    >
-                      <Text style={styles.suggestionText}>{q}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-            }
-            ListFooterComponent={isTyping && !streamingId ? <TypingIndicator /> : null}
-          />
-
-          {/* Input bar */}
-          <View style={[styles.inputBar, { paddingBottom: insets.bottom + 12 }]}>
-            <View style={styles.inputWrapper}>
-              <TextInput
-                style={styles.chatInput}
-                value={chatInput}
-                onChangeText={setChatInput}
-                placeholder="Ask about your budget…"
-                placeholderTextColor="#94A3B8"
-                multiline
-                maxLength={300}
-                selectionColor={COLORS.accent}
-              />
+          ) : (
+            <View style={styles.errorBox}>
+              <Ionicons name="analytics-outline" size={40} color={COLORS.muted} />
+              <Text style={styles.errorText}>Set up your budget to see insights.</Text>
               <Pressable
-                style={[styles.sendBtn, (!chatInput.trim() || isTyping || isStreamingActive) && styles.sendBtnDisabled]}
-                onPress={() => sendMessage()}
-                disabled={!chatInput.trim() || isTyping || isStreamingActive}
+                style={styles.retryBtn}
+                onPress={() => budgetData && runInsights(budgetData, expenses)}
               >
-                <Ionicons name="arrow-up" size={18} color="#FFF" />
+                <Text style={styles.retryBtnText}>Generate Insights</Text>
               </Pressable>
             </View>
-          </View>
-        </KeyboardAvoidingView>
+          )}
+        </ScrollView>
+
+      /* ─────────────── Budget Plan Tab ─────────────── */
+      ) : (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.planScroll, { paddingBottom: insets.bottom + 120 }]}
+        >
+          {budgetPlan ? (
+            <>
+              {/* Summary Card */}
+              <View style={styles.planSummaryCard}>
+                <LinearGradient colors={['#1C1C1E', '#2C2C2E']} style={styles.planSummaryGradient}>
+                  <View style={styles.planSummaryHeader}>
+                    <Ionicons name="sparkles" size={22} color="#F5A623" />
+                    <Text style={styles.planSummaryTitle}>Smart Budget Plan</Text>
+                  </View>
+                  <Text style={styles.planSummaryIncome}>
+                    Based on your income of {formatMoney(budgetPlan.totalIncome)}
+                  </Text>
+                  
+                  <View style={styles.planSummaryDivider} />
+                  
+                  <View style={styles.planSummaryRow}>
+                    <View style={styles.planSummaryItem}>
+                      <View style={[styles.planSummaryDot, { backgroundColor: '#3B82F6' }]} />
+                      <View style={styles.planSummaryItemText}>
+                        <Text style={styles.planSummaryLabel}>Needs</Text>
+                        <Text style={styles.planSummaryPercent}>{budgetPlan.needsPercent}%</Text>
+                      </View>
+                      <Text style={styles.planSummaryValue}>{formatMoney(budgetPlan.needsTotal)}</Text>
+                    </View>
+                    <View style={styles.planSummaryItem}>
+                      <View style={[styles.planSummaryDot, { backgroundColor: '#F59E0B' }]} />
+                      <View style={styles.planSummaryItemText}>
+                        <Text style={styles.planSummaryLabel}>Wants</Text>
+                        <Text style={styles.planSummaryPercent}>{budgetPlan.wantsPercent}%</Text>
+                      </View>
+                      <Text style={styles.planSummaryValue}>{formatMoney(budgetPlan.wantsTotal)}</Text>
+                    </View>
+                    <View style={styles.planSummaryItem}>
+                      <View style={[styles.planSummaryDot, { backgroundColor: '#22C55E' }]} />
+                      <View style={styles.planSummaryItemText}>
+                        <Text style={styles.planSummaryLabel}>Savings</Text>
+                        <Text style={styles.planSummaryPercent}>{budgetPlan.savingsPercent}%</Text>
+                      </View>
+                      <Text style={styles.planSummaryValue}>{formatMoney(budgetPlan.savingsTotal)}</Text>
+                    </View>
+                  </View>
+                </LinearGradient>
+              </View>
+
+              {/* Rule explanation */}
+              <View style={styles.ruleBox}>
+                <Ionicons name="information-circle-outline" size={20} color="#3B82F6" />
+                <Text style={styles.ruleText}>
+                  Fin recommends the <Text style={styles.ruleBold}>50/30/20 rule</Text> for students: 
+                  50% for needs, 30% for wants, and 20% for savings. 
+                  This builds good money habits while you study.
+                </Text>
+              </View>
+
+              {/* Category Breakdown */}
+              <Text style={styles.planSectionTitle}>Recommended Breakdown</Text>
+              <Text style={styles.planSectionSubtitle}>
+                Smart allocations based on student living costs in South Africa
+              </Text>
+              
+              {budgetPlan.categories.map((cat, i) => (
+                <BudgetPlanCard
+                  key={cat.id}
+                  category={cat}
+                  recommended={cat.recommended}
+                  tip={cat.tip}
+                />
+              ))}
+
+              {/* Additional Tips */}
+              <View style={styles.tipsCard}>
+                <LinearGradient colors={['#EFF6FF', '#F8FAFC']} style={styles.tipsGradient}>
+                  <Text style={styles.tipsTitle}>💡 Pro Tips from Fin</Text>
+                  <View style={styles.tipRow}>
+                    <Ionicons name="checkmark-circle" size={16} color={COLORS.positive} />
+                    <Text style={styles.tipText}>Track every expense for 30 days to see your real spending</Text>
+                  </View>
+                  <View style={styles.tipRow}>
+                    <Ionicons name="checkmark-circle" size={16} color={COLORS.positive} />
+                    <Text style={styles.tipText}>Save at least R200/month for emergencies</Text>
+                  </View>
+                  <View style={styles.tipRow}>
+                    <Ionicons name="checkmark-circle" size={16} color={COLORS.positive} />
+                    <Text style={styles.tipText}>Use student discounts - ask everywhere!</Text>
+                  </View>
+                  <View style={styles.tipRow}>
+                    <Ionicons name="checkmark-circle" size={16} color={COLORS.positive} />
+                    <Text style={styles.tipText}>Cook with friends to split food costs</Text>
+                  </View>
+                  <View style={styles.tipRow}>
+                    <Ionicons name="checkmark-circle" size={16} color={COLORS.positive} />
+                    <Text style={styles.tipText}>Review your budget weekly, not monthly</Text>
+                  </View>
+                </LinearGradient>
+              </View>
+            </>
+          ) : (
+            <View style={styles.errorBox}>
+              <Ionicons name="wallet-outline" size={48} color={COLORS.muted} />
+              <Text style={styles.errorText}>
+                Add your income to see Fin's smart budget recommendations.
+              </Text>
+              <Text style={styles.errorSubtext}>
+                Go to Budget Setup to enter your monthly income.
+              </Text>
+            </View>
+          )}
+        </ScrollView>
       )}
     </LinearGradient>
   );
@@ -636,41 +638,6 @@ const styles = StyleSheet.create({
   tabActive:     { backgroundColor: COLORS.surface, shadowColor: '#CBD5E1', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
   tabText:       { fontSize: 13, fontFamily: FONTS.semiBold, color: COLORS.muted },
   tabTextActive: { color: COLORS.text },
-
-  // ── Setup banner ──
-  setupScroll: { padding: 20 },
-  setupBanner: { borderRadius: 24, overflow: 'hidden' },
-  setupGradient: {
-    padding: 28, alignItems: 'center', gap: 12,
-  },
-  setupTitle: {
-    fontSize: 24, fontFamily: FONTS.bold, color: '#FFF', letterSpacing: -0.5, textAlign: 'center',
-  },
-  setupSubtitle: {
-    fontSize: 14, fontFamily: FONTS.semiBold, color: 'rgba(255,255,255,0.55)',
-    textAlign: 'center', lineHeight: 22,
-  },
-  setupInputRow: {
-    flexDirection: 'row', alignItems: 'center', width: '100%',
-    backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 14,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 14,
-    marginTop: 4,
-  },
-  setupInput: {
-    flex: 1, fontSize: 14, fontFamily: FONTS.semiBold,
-    color: '#FFF', paddingVertical: 14,
-  },
-  eyeBtn:      { padding: 8 },
-  setupError:  { fontSize: 12, fontFamily: FONTS.semiBold, color: COLORS.negative },
-  setupBtn: {
-    width: '100%', backgroundColor: COLORS.positive, borderRadius: 14,
-    paddingVertical: 16, alignItems: 'center', marginTop: 4,
-  },
-  setupBtnText: { fontSize: 16, fontFamily: FONTS.bold, color: '#FFF' },
-  setupNote:   { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  setupNoteText: {
-    fontSize: 11, fontFamily: FONTS.semiBold, color: 'rgba(255,255,255,0.35)',
-  },
 
   // ── Insights ──
   insightsScroll: { paddingTop: 4 },
@@ -728,91 +695,136 @@ const styles = StyleSheet.create({
     fontSize: 14, fontFamily: FONTS.semiBold, color: COLORS.muted,
     textAlign: 'center', lineHeight: 20,
   },
+  errorSubtext: {
+    fontSize: 12, fontFamily: FONTS.semiBold, color: COLORS.muted,
+    textAlign: 'center',
+  },
   retryBtn: {
     backgroundColor: COLORS.accent, borderRadius: 14,
     paddingHorizontal: 28, paddingVertical: 12,
   },
   retryBtnText: { fontSize: 15, fontFamily: FONTS.bold, color: '#FFF' },
 
-  keySettingsRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    alignSelf: 'center', padding: 12, marginTop: 4,
-  },
-  keySettingsText: { fontSize: 12, fontFamily: FONTS.semiBold, color: COLORS.muted },
+  // ── Budget Plan ──
+  planScroll: { paddingTop: 4 },
 
-  // ── Chat ──
-  chatContent:      { paddingVertical: 12, gap: 8 },
-  chatContentEmpty: { flex: 1 },
-
-  chatEmptyState: {
-    alignItems: 'center', paddingHorizontal: 24, paddingTop: 40, gap: 8,
+  planSummaryCard: {
+    marginHorizontal: 16, marginBottom: 16, borderRadius: 22, overflow: 'hidden',
   },
-  chatEmptyEmoji:    { fontSize: 44 },
-  chatEmptyTitle:    { fontSize: 22, fontFamily: FONTS.bold, color: COLORS.text, letterSpacing: -0.4 },
-  chatEmptySubtitle: { fontSize: 14, fontFamily: FONTS.semiBold, color: COLORS.muted, marginBottom: 8 },
-
-  suggestionsWrap: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 4,
+  planSummaryGradient: {
+    padding: 22, gap: 14,
   },
-  suggestionChip: {
-    backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 20,
-    paddingHorizontal: 14, paddingVertical: 9,
-    borderWidth: 1, borderColor: COLORS.border,
+  planSummaryHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
   },
-  suggestionText: { fontSize: 13, fontFamily: FONTS.semiBold, color: COLORS.text },
-
-  bubbleRow: {
-    flexDirection: 'row', alignItems: 'flex-end', gap: 8,
-    paddingHorizontal: 12, marginBottom: 4,
+  planSummaryTitle: {
+    fontSize: 20, fontFamily: FONTS.bold, color: '#FFF', letterSpacing: -0.3,
   },
-  bubbleRowUser: { flexDirection: 'row-reverse' },
-  aiAvatar: {
-    width: 30, height: 30, borderRadius: 15, backgroundColor: COLORS.accent,
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  planSummaryIncome: {
+    fontSize: 13, fontFamily: FONTS.semiBold, color: 'rgba(255,255,255,0.5)',
   },
-  aiAvatarText: { fontSize: 12, fontFamily: FONTS.bold, color: COLORS.positive },
-
-  bubble: {
-    maxWidth: width * 0.72, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 18,
+  planSummaryDivider: {
+    height: 1, backgroundColor: 'rgba(255,255,255,0.1)',
   },
-  bubbleAI: {
-    backgroundColor: COLORS.surface, borderBottomLeftRadius: 4,
-    shadowColor: '#CBD5E1', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1, shadowRadius: 4, elevation: 1,
+  planSummaryRow: {
+    gap: 10,
   },
-  bubbleUser: {
-    backgroundColor: COLORS.accent, borderBottomRightRadius: 4,
+  planSummaryItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
   },
-  bubbleText:     { fontSize: 14, fontFamily: FONTS.semiBold, color: COLORS.text, lineHeight: 20 },
-  bubbleTextUser: { color: '#FFF' },
-  cursor:         { color: COLORS.muted, opacity: 0.8 },
-
-  typingBubble: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 16, paddingVertical: 14,
+  planSummaryDot: {
+    width: 10, height: 10, borderRadius: 5,
   },
-  typingDot: {
-    width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#94A3B8',
+  planSummaryItemText: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
+  },
+  planSummaryLabel: {
+    fontSize: 14, fontFamily: FONTS.semiBold, color: 'rgba(255,255,255,0.7)',
+  },
+  planSummaryPercent: {
+    fontSize: 12, fontFamily: FONTS.bold, color: 'rgba(255,255,255,0.4)',
+  },
+  planSummaryValue: {
+    fontSize: 15, fontFamily: FONTS.bold, color: '#FFF',
   },
 
-  inputBar: {
-    backgroundColor: COLORS.surface,
-    borderTopWidth: 1, borderTopColor: COLORS.border,
-    paddingHorizontal: 12, paddingTop: 10,
+  ruleBox: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    marginHorizontal: 16, marginBottom: 20,
+    backgroundColor: '#EFF6FF', borderRadius: 14, padding: 14,
+    borderLeftWidth: 3, borderLeftColor: '#3B82F6',
   },
-  inputWrapper: {
-    flexDirection: 'row', alignItems: 'flex-end', gap: 8,
-    backgroundColor: COLORS.inputBg, borderRadius: 24,
-    borderWidth: 1, borderColor: COLORS.border,
-    paddingHorizontal: 14, paddingVertical: 6,
+  ruleText: {
+    flex: 1, fontSize: 13, fontFamily: FONTS.semiBold, color: '#1D4ED8', lineHeight: 18,
   },
-  chatInput: {
-    flex: 1, fontSize: 15, fontFamily: FONTS.semiBold,
-    color: COLORS.text, maxHeight: 100, padding: 0,
+  ruleBold: {
+    fontFamily: FONTS.bold,
   },
-  sendBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: COLORS.accent, alignItems: 'center', justifyContent: 'center',
+
+  planSectionTitle: {
+    fontSize: 18, fontFamily: FONTS.bold, color: COLORS.text,
+    marginHorizontal: 16, marginBottom: 4,
   },
-  sendBtnDisabled: { opacity: 0.35 },
+  planSectionSubtitle: {
+    fontSize: 12, fontFamily: FONTS.semiBold, color: COLORS.muted,
+    marginHorizontal: 16, marginBottom: 16,
+  },
+
+  planCard: {
+    marginHorizontal: 16, marginBottom: 10,
+    backgroundColor: COLORS.surface, borderRadius: 16, padding: 16,
+    shadowColor: '#CBD5E1', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1, shadowRadius: 4, elevation: 2,
+  },
+  planHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginBottom: 8,
+  },
+  planCategoryInfo: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+  },
+  planDot: {
+    width: 10, height: 10, borderRadius: 5,
+  },
+  planCategoryName: {
+    fontSize: 14, fontFamily: FONTS.bold, color: COLORS.text,
+  },
+  planRecommended: {
+    fontSize: 16, fontFamily: FONTS.bold, color: COLORS.accent,
+  },
+  planProgressTrack: {
+    height: 4, borderRadius: 99, backgroundColor: '#F1F5F9',
+    marginBottom: 10, overflow: 'hidden',
+  },
+  planProgressFill: {
+    height: '100%', borderRadius: 99,
+  },
+  planTipRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+  },
+  planTipText: {
+    flex: 1, fontSize: 11, fontFamily: FONTS.semiBold, color: COLORS.muted,
+    lineHeight: 16,
+  },
+
+  // ── Tips Card ──
+  tipsCard: {
+    marginHorizontal: 16, marginTop: 8, marginBottom: 20,
+    borderRadius: 16, overflow: 'hidden',
+    borderWidth: 1, borderColor: '#DBEAFE',
+  },
+  tipsGradient: {
+    padding: 18, gap: 12,
+  },
+  tipsTitle: {
+    fontSize: 15, fontFamily: FONTS.bold, color: COLORS.text,
+    marginBottom: 4,
+  },
+  tipRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+  },
+  tipText: {
+    flex: 1, fontSize: 13, fontFamily: FONTS.semiBold, color: '#374151',
+    lineHeight: 18,
+  },
 });

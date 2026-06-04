@@ -1,46 +1,38 @@
-import * as SecureStore from 'expo-secure-store';
-
-const STORE_KEY = 'BUDGET_APP_GEMINI_KEY';
+// src/services/geminiService.js
 
 const MODEL = 'gemini-2.5-flash';
 
 const ENDPOINT =
-`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+  `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
 // ─────────────────────────────────────────────
-// Key storage
+// API KEY (ENV ONLY - SAFE ACCESS)
 // ─────────────────────────────────────────────
 
-export const saveApiKey = async (key) => {
-  return SecureStore.setItemAsync(STORE_KEY, key);
-};
+const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
 
-export const getStoredApiKey = async () => {
-  return SecureStore.getItemAsync(STORE_KEY);
-};
-
-export const clearApiKey = async () => {
-  return SecureStore.deleteItemAsync(STORE_KEY);
+const getApiKey = () => {
+  if (!API_KEY) {
+    console.warn('❌ Missing EXPO_PUBLIC_GEMINI_API_KEY in .env');
+    return null;
+  }
+  return API_KEY;
 };
 
 // ─────────────────────────────────────────────
-// Budget context
+// BUDGET CONTEXT
 // ─────────────────────────────────────────────
 
 const buildContext = (budgetData, expenses = []) => {
-
-  if (!budgetData)
-    return 'No budget data available';
+  if (!budgetData) return 'No budget data available';
 
   const categories =
     Object.values(budgetData.categories || {})
       .map(cat => {
-
         const spent = cat.spent || 0;
         const budgeted = cat.budgeted || 0;
 
         return `${cat.name}: spent R${spent}, budget R${budgeted}`;
-
       })
       .join('\n');
 
@@ -54,41 +46,39 @@ ${categories}
 
 Recent expenses:
 ${expenses
-  .slice(0,5)
+  .slice(0, 5)
   .map(e => `R${e.amount} ${e.category}`)
   .join('\n')}
 `;
 };
 
 // ─────────────────────────────────────────────
-// Insights
+// INSIGHTS
 // ─────────────────────────────────────────────
 
-export const generateInsights = async (
-  budgetData,
-  expenses,
-  apiKey
-) => {
+export const generateInsights = async (budgetData, expenses) => {
+  const apiKey = getApiKey();
 
-  const context =
-    buildContext(budgetData, expenses);
+  if (!apiKey) {
+    throw new Error('Missing Gemini API key in .env');
+  }
+
+  const context = buildContext(budgetData, expenses);
 
   try {
-
     const res = await fetch(
       `${ENDPOINT}?key=${apiKey}`,
       {
-        method:'POST',
-        headers:{
-          'Content-Type':'application/json'
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
         },
-        body:JSON.stringify({
-
-          contents:[
+        body: JSON.stringify({
+          contents: [
             {
-              parts:[
+              parts: [
                 {
-                  text:`
+                  text: `
 Return ONLY JSON.
 
 {
@@ -117,152 +107,112 @@ ${context}
               ]
             }
           ],
-
-          generationConfig:{
-            temperature:0.3,
-            responseMimeType:"application/json"
+          generationConfig: {
+            temperature: 0.3,
+            responseMimeType: "application/json"
           }
-
         })
       }
     );
 
-    const data=await res.json();
+    const data = await res.json();
 
     const text =
-      data.candidates?.[0]
-      ?.content?.parts?.[0]
-      ?.text;
+      data.candidates?.[0]?.content?.parts?.[0]?.text;
 
-    console.log("RAW AI:",text);
-
-    if(!text)
-      throw new Error("No response");
+    if (!text) throw new Error('No response');
 
     return JSON.parse(text);
 
-  }
-
-  catch(error){
-
-    console.log(
-      "generateInsights:",
-      error
-    );
-
+  } catch (error) {
+    console.log('generateInsights:', error);
     throw error;
   }
-
 };
 
 // ─────────────────────────────────────────────
-// Chat
+// CHAT - FIXED
 // ─────────────────────────────────────────────
 
 export const streamChatMessage = async (
   messages,
   budgetData,
   expenses,
-  apiKey,
   onChunk,
   onDone,
   onError
-)=>{
+) => {
+  try {
+    const apiKey = getApiKey();
 
-try{
+    if (!apiKey) {
+      throw new Error('Missing Gemini API key in .env');
+    }
 
-const context =
-buildContext(
-budgetData,
-expenses
-);
+    const context = buildContext(budgetData, expenses);
 
-const prompt=`
+    // Build conversation history
+    const conversationHistory = messages
+      .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+      .join('\n\n');
 
-You are Fin, a student budgeting advisor.
+    const prompt = `You are Fin, a friendly and helpful student budgeting advisor. Keep your responses concise and practical.
 
-Budget:
-
+Here is the user's current budget information:
 ${context}
 
-Conversation:
+Previous conversation:
+${conversationHistory}
 
-${messages
-.map(
-m=>`${m.role}: ${m.content}`
-)
-.join('\n')}
+Provide a helpful response to the user's last message. Be encouraging and give specific, actionable advice based on their actual spending patterns. Keep it under 3-4 sentences unless they ask for detailed analysis.`;
 
-Reply briefly.
-`;
+    console.log('Chat prompt length:', prompt.length);
+    console.log('Messages count:', messages.length);
 
-const res=await fetch(
-`${ENDPOINT}?key=${apiKey}`,
-{
-method:'POST',
+    const res = await fetch(
+      `${ENDPOINT}?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [{ text: prompt }]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 500,
+          }
+        })
+      }
+    );
 
-headers:{
-'Content-Type':'application/json'
-},
+    if (!res.ok) {
+      const errorData = await res.json();
+      console.error('API Error:', res.status, errorData);
+      throw new Error(`API error: ${res.status}`);
+    }
 
-body:JSON.stringify({
+    const data = await res.json();
+    console.log('Chat API response:', JSON.stringify(data, null, 2));
 
-contents:[
-{
-parts:[
-{
-text:prompt
-}
-]
-}
-],
+    const text =
+      data.candidates?.[0]?.content?.parts?.[0]?.text;
 
-generationConfig:{
-temperature:0.7
-}
+    if (!text) {
+      console.error('Empty response from Gemini');
+      throw new Error('Empty response');
+    }
 
-})
-}
-);
+    // Since we're not actually streaming, we simulate it
+    onChunk(text, text);
+    onDone(text);
 
-const data =
-await res.json();
-
-const text =
-data.candidates?.[0]
-?.content?.parts?.[0]
-?.text;
-
-if(!text){
-
-throw new Error(
-'Empty response'
-);
-
-}
-
-onChunk(
-text,
-text
-);
-
-onDone(
-text
-);
-
-}
-
-catch(error){
-
-console.log(
-'Chat error:',
-error
-);
-
-onError(
-error
-);
-
-}
-
+  } catch (error) {
+    console.log('Chat error:', error);
+    onError(error);
+  }
 };
