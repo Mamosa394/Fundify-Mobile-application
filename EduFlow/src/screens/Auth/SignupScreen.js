@@ -50,7 +50,6 @@ const UNIVERSITIES = [
   'Lerotholi Polytechnic',
   'Lesotho College of Education (LCE)',
   'CAS',
-  'IDM Lesotho',
   'NHTC',
 ];
 

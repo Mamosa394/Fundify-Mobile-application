@@ -78,33 +78,61 @@ export const saveBudgetFromWizard = async (userId, budgetData) => {
     const currentMonth = new Date().toISOString().slice(0, 7);
     const budgetRef = doc(db, 'users', userId, 'budgets', currentMonth);
     
+    console.log('Saving budget from wizard with data:', JSON.stringify(budgetData.categories, null, 2));
+    
     // Create categories object from budget data
     const categories = {};
+    
+    // Initialize all BUDGET_CATEGORIES with zero amounts
     BUDGET_CATEGORIES.forEach(cat => {
+      let budgetedAmount = 0;
+      
+      // Check if this category has data from the wizard
+      if (budgetData.categories) {
+        // Try to find by BUDGET_CATEGORIES id
+        if (budgetData.categories[cat.id] !== undefined) {
+          budgetedAmount = Number(budgetData.categories[cat.id]) || 0;
+        }
+      }
+      
       categories[cat.id] = {
         name: cat.name,
         spent: 0,
-        budgeted: budgetData.categories[cat.id] || 0,
+        budgeted: Math.round(budgetedAmount),
         color: cat.color,
         icon: cat.icon
       };
     });
     
+    // Calculate total budget from categories
+    const totalBudgeted = Object.values(categories).reduce((sum, cat) => sum + cat.budgeted, 0);
+    const actualTotalBudget = budgetData.income || budgetData.totalBudget || totalBudgeted;
+    
     const budgetDoc = {
       month: currentMonth,
-      totalBudget: budgetData.totalBudget,
-      remainingBudget: budgetData.totalBudget,
+      income: budgetData.income || actualTotalBudget,
+      baseIncome: budgetData.baseIncome || 0,
+      extraIncome: budgetData.extraIncome || 0,
+      incomeType: budgetData.incomeType || '',
+      totalBudget: actualTotalBudget,
+      remainingBudget: actualTotalBudget,
       spentTotal: 0,
       categories: categories,
-      strategy: budgetData.strategy,
-      livingSituation: budgetData.livingSituation,
-      incomeType: budgetData.incomeType,
+      strategy: budgetData.strategy || '',
+      livingSituation: budgetData.livingSituation || '',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     };
     
     await setDoc(budgetRef, budgetDoc);
-    console.log('Budget saved successfully from wizard');
+    
+    console.log('Budget saved successfully from wizard. Categories:');
+    Object.entries(categories)
+      .filter(([_, cat]) => cat.budgeted > 0)
+      .forEach(([id, cat]) => {
+        console.log(`  ${cat.name}: R${cat.budgeted}`);
+      });
+    
     return { id: currentMonth, ...budgetDoc };
   } catch (error) {
     console.error('Error saving budget from wizard:', error);
@@ -283,12 +311,19 @@ export const getExpenses = async (userId, month = null) => {
     const expensesRef = collection(db, 'users', userId, 'expenses');
     const q = query(
       expensesRef,
-      where('month', '==', currentMonth),
-      orderBy('date', 'desc')
+      where('month', '==', currentMonth)
+      // Removing orderBy to avoid index error - sort on client side
     );
     
     const querySnapshot = await getDocs(q);
     const expenses = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
+    // Sort expenses by date on client side (newest first)
+    expenses.sort((a, b) => {
+      const dateA = a.date ? new Date(a.date) : new Date(0);
+      const dateB = b.date ? new Date(b.date) : new Date(0);
+      return dateB - dateA;
+    });
     
     console.log(`[BudgetService] Retrieved ${expenses.length} expenses`);
     return expenses;
@@ -495,12 +530,21 @@ export const getExpensesByCategory = async (userId, categoryId, month = null) =>
     const q = query(
       expensesRef,
       where('month', '==', currentMonth),
-      where('category', '==', categoryId),
-      orderBy('date', 'desc')
+      where('category', '==', categoryId)
+      // Removing orderBy to avoid index error
     );
     
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const expenses = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
+    // Sort on client side
+    expenses.sort((a, b) => {
+      const dateA = a.date ? new Date(a.date) : new Date(0);
+      const dateB = b.date ? new Date(b.date) : new Date(0);
+      return dateB - dateA;
+    });
+    
+    return expenses;
   } catch (error) {
     console.error('Error getting expenses by category:', error);
     throw error;

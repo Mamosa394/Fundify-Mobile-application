@@ -507,33 +507,37 @@ export default function BudgetSetupWizard() {
     }
   };
 
-  const handleComplete = async () => {
-    try {
-      const userId = auth.currentUser?.uid;
-      if (!userId) return;
+const handleComplete = async () => {
+  try {
+    const userId = auth.currentUser?.uid;
+    if (!userId) return;
 
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      
-      await saveUserIncome(userId, {
-        income: Number(wizardData.income) || 0,
-        incomeType: wizardData.incomeType,
-        extraIncome: Number(wizardData.extraIncome) || 0,
-        extraIncomeDescription: wizardData.extraIncomeDescription,
-        totalIncome: calculateTotalIncome(),
-      });
-      
-      const budget = calculateBudget();
-      await saveBudgetFromWizard(userId, budget);
-      
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'BudgetMain' }],
-      });
-    } catch (error) {
-      console.error('Failed to save budget:', error);
-      Alert.alert('Error', 'Failed to save your budget. Please try again.');
-    }
-  };
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    
+    // Save user income first
+    await saveUserIncome(userId, {
+      income: Number(wizardData.income) || 0,
+      incomeType: wizardData.incomeType,
+      extraIncome: Number(wizardData.extraIncome) || 0,
+      extraIncomeDescription: wizardData.extraIncomeDescription,
+      totalIncome: calculateTotalIncome(),
+    });
+    
+    console.log('User income saved successfully');
+    
+    // Calculate and save budget
+    const budget = calculateBudget();
+    await saveBudgetFromWizard(userId, budget);
+    
+    console.log('Budget saved successfully from wizard');
+    
+    navigation.replace('Budget');
+    
+  } catch (error) {
+    console.error('Failed to save budget:', error);
+    Alert.alert('Error', 'Failed to save your budget. Please try again.');
+  }
+};
 
   const calculateBudget = () => {
     const totalIncome = calculateTotalIncome();

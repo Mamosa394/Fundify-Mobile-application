@@ -17,7 +17,7 @@ import { getCurrentBudget, getExpenses } from '../../services/budgetService';
 import {
   generateInsights, streamChatMessage,
   getStoredApiKey, saveApiKey, clearApiKey,
-} from '../../services/openaiService';
+} from '../../../src/services/geminiService';
 
 const { width } = Dimensions.get('window');
 
@@ -149,7 +149,7 @@ function SetupBanner({ onSaved }) {
   const [saving,  setSaving]  = useState(false);
   const [error,   setError]   = useState('');
 
-  const valid = key.trim().startsWith('sk-') && key.trim().length > 20;
+  const valid = key.trim().length > 30;
 
   const handleSave = async () => {
     if (!valid) return;
@@ -169,11 +169,11 @@ function SetupBanner({ onSaved }) {
     <View style={styles.setupBanner}>
       <LinearGradient colors={['#1C1C1E', '#2C2C2E']} style={styles.setupGradient}>
         <Ionicons name="key-outline" size={36} color="#FFF" />
-        <Text style={styles.setupTitle}>Connect OpenAI</Text>
+        <Text style={styles.setupTitle}>Connect Gemini AI</Text>
         <Text style={styles.setupSubtitle}>
-          Get a free key from{'\n'}
-          <Text style={{ color: '#60A5FA' }}>platform.openai.com → API Keys</Text>
-          {'\n'}Paste it below — stored only on your device.
+          Get a FREE key from{'\n'}
+          <Text style={{ color: '#60A5FA' }}>aistudio.google.com/apikey</Text>
+          {'\n'}Completely free — no payment needed!
         </Text>
 
         <View style={styles.setupInputRow}>
@@ -181,7 +181,7 @@ function SetupBanner({ onSaved }) {
             style={styles.setupInput}
             value={key}
             onChangeText={setKey}
-            placeholder="sk-proj-..."
+            placeholder="AIza... (paste your key here)"
             placeholderTextColor="rgba(255,255,255,0.25)"
             secureTextEntry={!showKey}
             autoCapitalize="none"
@@ -243,24 +243,34 @@ export default function AIAdvisorScreen({ navigation }) {
 
   // ── Bootstrap ──
   useEffect(() => {
-    (async () => {
-      try {
-        const [key, budget, expData] = await Promise.all([
-          getStoredApiKey(),
-          getCurrentBudget(userId),
-          getExpenses(userId),
-        ]);
-        if (key) { setApiKey(key); setHasKey(true); }
-        setBudgetData(budget);
-        setExpenses(expData || []);
-        if (key && budget) await runInsights(key, budget, expData || []);
-      } catch (e) {
-        console.error('AIAdvisor init:', e);
-      } finally {
-        setLoadingData(false);
+  (async () => {
+    try {
+      const [key, budget, expData] = await Promise.all([
+        getStoredApiKey(),
+        getCurrentBudget(userId),
+        getExpenses(userId),
+      ]);
+
+      // Remove old saved key once
+      if (key) {
+        await clearApiKey();
+
+        setApiKey(null);
+        setHasKey(false);
+
+        console.log('Old Gemini key removed');
       }
-    })();
-  }, []);
+
+      setBudgetData(budget);
+      setExpenses(expData || []);
+
+    } catch (e) {
+      console.error('AIAdvisor init:', e);
+    } finally {
+      setLoadingData(false);
+    }
+  })();
+}, []);
 
   useFocusEffect(useCallback(() => {
     // Refresh budget data when tab refocused
@@ -282,6 +292,7 @@ export default function AIAdvisorScreen({ navigation }) {
       const result = await generateInsights(budget, expData, key);
       setInsights(result);
     } catch (e) {
+      console.error('Insights error:', e);
       setInsightsError(e.message || 'Could not load insights. Check your API key.');
     } finally {
       setLoadingAI(false);
@@ -331,9 +342,17 @@ export default function AIAdvisorScreen({ navigation }) {
       },
       (err) => {
         console.error('chat stream error:', err);
+        let errorMessage = 'Sorry, something went wrong. Please try again.';
+        
+        if (err.message?.includes('API key not valid') || err.message?.includes('403')) {
+          errorMessage = 'Invalid API key. Please get a new one from aistudio.google.com/apikey';
+        } else if (err.message?.includes('quota') || err.message?.includes('429')) {
+          errorMessage = 'Rate limit reached. Wait a moment and try again.';
+        }
+        
         setChatMessages(prev =>
           prev.map(m => m.id === streamId
-            ? { ...m, content: 'Sorry, something went wrong. Please try again.' }
+            ? { ...m, content: errorMessage }
             : m
           )
         );

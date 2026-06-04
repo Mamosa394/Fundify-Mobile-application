@@ -1,3 +1,5 @@
+// src/screens/Budget/ExpenseDetailScreen.js
+
 import React, {
   useState,
   useRef,
@@ -19,6 +21,7 @@ import {
   Alert,
   Dimensions,
   ActivityIndicator,
+  ScrollView,
   Modal,
 } from 'react-native';
 import { LinearGradient }    from 'expo-linear-gradient';
@@ -29,27 +32,29 @@ import { StatusBar }         from 'expo-status-bar';
 import { useFocusEffect }    from '@react-navigation/native';
 import { auth }              from '../../services/firebase';
 import {
+  getExpenses,
   getExpensesByCategory,
   deleteExpense,
   updateExpense,
-  getCurrentBudget,
+  getBudgetByMonth,
   BUDGET_CATEGORIES,
 } from '../../services/budgetService';
-import { exportAsCSV, exportAsPDF } from '../../utils/exportUtils';
+import { exportAsCSV, exportAsPDF } from '../../services/exportService';
+import ScrollableTopTabBar from '../../../src/screens/Budget/components/ScrollableTopBar';
 
 const { width } = Dimensions.get('window');
 
 const COLORS = {
-  background: '#F8FAFC',
+  background: '#F2F2F7',
   surface:    '#FFFFFF',
-  text:       '#0F172A',
-  muted:      '#64748B',
+  text:       '#0A0A0A',
+  muted:      '#8E8E93',
   positive:   '#34C759',
   negative:   '#FF3B30',
   accent:     '#1C1C1E',
-  warning:    '#F5A623',
+  warning:    '#FF9500',
   border:     '#E2E8F0',
-  inputBg:    '#F8FAFC',
+  inputBg:    '#F2F2F7',
 };
 
 const FONTS = {
@@ -57,8 +62,9 @@ const FONTS = {
   semiBold: 'JosefinSans-SemiBold',
 };
 
-const DELETE_REVEAL   = 76;
+const DELETE_REVEAL   = 80;
 const SWIPE_THRESHOLD = 60;
+const BOTTOM_NAV_HEIGHT = 90;
 
 const formatMoney = (n) => `R${Math.round(n || 0).toLocaleString('en-ZA')}`;
 
@@ -78,7 +84,7 @@ const friendlyDate = (d) => {
   if (d.toDateString() === today.toDateString())     return 'Today';
   if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
   return d.toLocaleDateString('en-ZA', {
-    weekday: 'long', day: 'numeric', month: 'long',
+    weekday: 'short', day: 'numeric', month: 'short',
   });
 };
 
@@ -98,7 +104,49 @@ const groupByDate = (expenses) => {
     }));
 };
 
-function SwipeableExpenseItem({ item, isEditing, onDelete, onEdit, onSave, onCancelEdit }) {
+// ─── Search & Filter Bar ──────────────────────────────────────────────────────
+function SearchFilterBar({ searchQuery, onSearchChange, filter, onFilterChange }) {
+  return (
+    <View style={styles.searchFilterContainer}>
+      <View style={styles.searchInputWrapper}>
+        <Ionicons name="search-outline" size={15} color={COLORS.muted} />
+        <TextInput
+          style={styles.searchInput}
+          value={searchQuery}
+          onChangeText={onSearchChange}
+          placeholder="Search expenses..."
+          placeholderTextColor={COLORS.muted}
+          selectionColor={COLORS.accent}
+        />
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterChips}>
+        {['All', 'Over R100', 'This Week'].map((f) => (
+          <Pressable
+            key={f}
+            style={[
+              styles.filterChip,
+              filter === f && { backgroundColor: COLORS.accent },
+            ]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onFilterChange(filter === f ? 'All' : f);
+            }}
+          >
+            <Text style={[
+              styles.filterChipText,
+              filter === f && { color: '#FFF' },
+            ]}>
+              {f}
+            </Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+// ─── SwipeableExpenseItem ─────────────────────────────────────────────────────
+function SwipeableExpenseItem({ item, isEditing, onDelete, onEdit, onSave, onCancelEdit, categoryColor }) {
   const translateX    = useRef(new Animated.Value(0)).current;
   const deleteOpacity = useRef(new Animated.Value(0)).current;
   const collapseAnim  = useRef(new Animated.Value(1)).current;
@@ -107,6 +155,9 @@ function SwipeableExpenseItem({ item, isEditing, onDelete, onEdit, onSave, onCan
   const [editAmount, setEditAmount] = useState('');
   const [editNote,   setEditNote]   = useState('');
   const [saving,     setSaving]     = useState(false);
+
+  const cat = BUDGET_CATEGORIES.find(c => c.id === item.category);
+  const displayColor = categoryColor || cat?.color || COLORS.accent;
 
   useEffect(() => {
     if (isEditing) {
@@ -123,7 +174,7 @@ function SwipeableExpenseItem({ item, isEditing, onDelete, onEdit, onSave, onCan
       toValue: 0, duration: 140, useNativeDriver: false,
     }).start();
     isOpen.current = false;
-  }, []);
+  }, [translateX, deleteOpacity]);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -183,7 +234,7 @@ function SwipeableExpenseItem({ item, isEditing, onDelete, onEdit, onSave, onCan
     }
     setSaving(true);
     try {
-      await onSave(item, { amount: newAmount, note: editNote.trim() });
+      await onSave(item, { amount: newAmount, note: editNote.trim(), category: item.category });
     } finally {
       setSaving(false);
     }
@@ -199,7 +250,7 @@ function SwipeableExpenseItem({ item, isEditing, onDelete, onEdit, onSave, onCan
             inputRange: [0, 1], outputRange: [0, 600],
           }),
           marginBottom: collapseAnim.interpolate({
-            inputRange: [0, 1], outputRange: [0, 10],
+            inputRange: [0, 1], outputRange: [0, 8],
           }),
         },
       ]}
@@ -225,11 +276,13 @@ function SwipeableExpenseItem({ item, isEditing, onDelete, onEdit, onSave, onCan
                 onChangeText={(t) => setEditAmount(formatAmountInput(t))}
                 keyboardType="numeric"
                 autoFocus
-                selectionColor={COLORS.accent}
+                selectionColor={displayColor}
                 placeholder="0"
                 placeholderTextColor="#CBD5E1"
               />
             </View>
+
+            <View style={styles.editDivider} />
 
             <View style={styles.editNoteRow}>
               <Ionicons name="create-outline" size={16} color={COLORS.muted} />
@@ -237,10 +290,10 @@ function SwipeableExpenseItem({ item, isEditing, onDelete, onEdit, onSave, onCan
                 style={styles.editNoteInput}
                 value={editNote}
                 onChangeText={setEditNote}
-                placeholder="Add a note…"
+                placeholder="Add a note..."
                 placeholderTextColor="#CBD5E1"
                 returnKeyType="done"
-                selectionColor={COLORS.accent}
+                selectionColor={displayColor}
                 maxLength={100}
               />
             </View>
@@ -260,7 +313,7 @@ function SwipeableExpenseItem({ item, isEditing, onDelete, onEdit, onSave, onCan
                 >
                   <Text style={styles.saveBtnText}>
                     {saving
-                      ? 'Saving…'
+                      ? 'Saving...'
                       : `Save ${parseAmount(editAmount) > 0 ? formatMoney(parseAmount(editAmount)) : ''}`}
                   </Text>
                 </LinearGradient>
@@ -277,18 +330,29 @@ function SwipeableExpenseItem({ item, isEditing, onDelete, onEdit, onSave, onCan
             }}
           >
             <View style={styles.expenseLeft}>
-              <Text style={styles.expenseNote} numberOfLines={1}>
-                {item.note || 'No description'}
-              </Text>
-              <Text style={styles.expenseTime}>
-                {new Date(item.date).toLocaleTimeString('en-ZA', {
-                  hour: '2-digit', minute: '2-digit',
-                })}
-              </Text>
+              <View style={styles.expenseNameRow}>
+                <View style={[styles.expenseCategoryDot, { backgroundColor: displayColor }]} />
+                <Text style={styles.expenseNote} numberOfLines={1}>
+                  {item.note || cat?.name || 'Expense'}
+                </Text>
+              </View>
+              <View style={styles.expenseMetaRow}>
+                <Text style={styles.expenseTime}>
+                  {new Date(item.date).toLocaleTimeString('en-ZA', {
+                    hour: '2-digit', minute: '2-digit',
+                  })}
+                </Text>
+                {cat && (
+                  <Text style={styles.expenseCategoryLabel}>{cat.name}</Text>
+                )}
+              </View>
             </View>
             <View style={styles.expenseRight}>
               <Text style={styles.expenseAmount}>{formatMoney(item.amount)}</Text>
-              <Text style={styles.editHint}>tap to edit</Text>
+              <View style={styles.editHintRow}>
+                <Ionicons name="pencil-outline" size={10} color={COLORS.muted} />
+                <Text style={styles.editHint}>tap to edit</Text>
+              </View>
             </View>
           </Pressable>
         )}
@@ -297,45 +361,50 @@ function SwipeableExpenseItem({ item, isEditing, onDelete, onEdit, onSave, onCan
   );
 }
 
-function SummaryBar({ category, spent, budgeted, count }) {
+// ─── SummaryBar ───────────────────────────────────────────────────────────────
+function SummaryBar({ category, spent, budgeted, count, isAllCategories, month }) {
   const progress  = budgeted > 0 ? Math.min(spent / budgeted, 1) : 0;
-  const remaining = budgeted - spent;
+  const remaining = Math.abs(budgeted - spent);
   const isOver    = spent > budgeted;
+  const barColor  = isOver ? COLORS.negative : progress > 0.8 ? COLORS.warning : (category?.color || COLORS.positive);
+  const progressPercent = `${Math.min(progress * 100, 100)}%`;
+
+  const monthLabel = new Date(month + '-01').toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' });
 
   return (
     <View style={styles.summaryBar}>
-      <LinearGradient colors={['#FFFFFF', '#F8FAFC']} style={styles.summaryGradient}>
+      <View style={styles.summaryCard}>
         <View style={styles.summaryHeader}>
-          <View style={[styles.summaryDot, { backgroundColor: category?.color || COLORS.accent }]} />
-          <Text style={styles.summaryCatName}>{category?.name || 'Category'}</Text>
-          <Text style={styles.summaryCount}>
-            {count} expense{count !== 1 ? 's' : ''}
-          </Text>
+          <View style={[styles.summaryDot, { backgroundColor: isAllCategories ? COLORS.accent : (category?.color || COLORS.accent) }]} />
+          <View style={styles.summaryHeaderText}>
+            <Text style={styles.summaryCatName}>
+              {isAllCategories ? 'All Expenses' : category?.name || 'Category'}
+            </Text>
+            <Text style={styles.summaryCount}>
+              {monthLabel} · {count} expense{count !== 1 ? 's' : ''}
+            </Text>
+          </View>
         </View>
 
         <View style={styles.summaryStats}>
           <View style={styles.summaryStat}>
-            <Text style={styles.summaryStatLabel}>Spent</Text>
-            <Text style={[
-              styles.summaryStatValue,
-              { color: isOver ? COLORS.negative : COLORS.text },
-            ]}>
+            <Text style={styles.summaryStatLabel}>SPENT</Text>
+            <Text style={[styles.summaryStatValue, { color: COLORS.negative }]}>
               {formatMoney(spent)}
             </Text>
           </View>
           <View style={styles.summaryDivider} />
           <View style={styles.summaryStat}>
-            <Text style={styles.summaryStatLabel}>Budget</Text>
-            <Text style={styles.summaryStatValue}>{formatMoney(budgeted)}</Text>
+            <Text style={styles.summaryStatLabel}>BUDGET</Text>
+            <Text style={[styles.summaryStatValue, { color: COLORS.text }]}>
+              {formatMoney(budgeted)}
+            </Text>
           </View>
           <View style={styles.summaryDivider} />
           <View style={styles.summaryStat}>
-            <Text style={styles.summaryStatLabel}>{isOver ? 'Over by' : 'Left'}</Text>
-            <Text style={[
-              styles.summaryStatValue,
-              { color: isOver ? COLORS.negative : COLORS.positive },
-            ]}>
-              {formatMoney(Math.abs(remaining))}
+            <Text style={styles.summaryStatLabel}>{isOver ? 'OVER' : 'LEFT'}</Text>
+            <Text style={[styles.summaryStatValue, { color: isOver ? COLORS.negative : COLORS.positive }]}>
+              {formatMoney(remaining)}
             </Text>
           </View>
         </View>
@@ -345,10 +414,8 @@ function SummaryBar({ category, spent, budgeted, count }) {
             style={[
               styles.summaryProgressFill,
               {
-                width: `${Math.min(progress * 100, 100)}%`,
-                backgroundColor: isOver
-                  ? COLORS.negative
-                  : (category?.color || COLORS.positive),
+                width: progressPercent,
+                backgroundColor: barColor,
               },
             ]}
           />
@@ -356,26 +423,104 @@ function SummaryBar({ category, spent, budgeted, count }) {
 
         {isOver && (
           <Text style={styles.overBudgetText}>
-            ⚠️ Over budget by {formatMoney(Math.abs(remaining))}
+            Over budget by {formatMoney(remaining)}
           </Text>
         )}
-      </LinearGradient>
+      </View>
     </View>
   );
 }
 
-function EmptyState({ categoryName }) {
+// ─── Undo Snackbar ────────────────────────────────────────────────────────────
+function UndoSnackbar({ visible, onUndo, onDismiss, bottomInset }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+      const timer = setTimeout(() => {
+        Animated.timing(opacity, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => onDismiss());
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [visible]);
+
+  if (!visible) return null;
+
   return (
-    <View style={styles.emptyState}>
-      <Ionicons name="receipt-outline" size={48} color={COLORS.muted} />
-      <Text style={styles.emptyTitle}>No expenses yet</Text>
-      <Text style={styles.emptySubtitle}>
-        Your {categoryName} expenses will appear here once you add them.
-      </Text>
-    </View>
+    <Animated.View style={[styles.snackbar, { opacity, bottom: bottomInset + BOTTOM_NAV_HEIGHT + 12 }]}>
+      <Text style={styles.snackbarText}>Expense deleted</Text>
+      <Pressable onPress={onUndo}>
+        <Text style={styles.snackbarUndo}>Undo</Text>
+      </Pressable>
+    </Animated.View>
   );
 }
 
+// ─── Export Modal ─────────────────────────────────────────────────────────────
+function ExportModal({ visible, onClose, onExportCSV, onExportPDF, loading, expenses, categoryName, month }) {
+  const monthLabel = new Date(month + '-01').toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' });
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={styles.modalOverlay} onPress={onClose}>
+        <Pressable style={styles.exportSheet} onPress={() => {}}>
+          <View style={styles.exportHandle} />
+          <Text style={styles.exportTitle}>Export Report</Text>
+          <Text style={styles.exportSubtitle}>
+            {expenses.length} expense{expenses.length !== 1 ? 's' : ''} · {categoryName} · {monthLabel}
+          </Text>
+
+          <Pressable
+            style={[styles.exportOption, loading && { opacity: 0.5 }]}
+            onPress={onExportCSV}
+            disabled={loading}
+          >
+            <View style={[styles.exportOptionIcon, { backgroundColor: '#F0FDF4' }]}>
+              {loading ? (
+                <ActivityIndicator size="small" color={COLORS.positive} />
+              ) : (
+                <Ionicons name="grid-outline" size={22} color={COLORS.positive} />
+              )}
+            </View>
+            <View style={styles.exportOptionInfo}>
+              <Text style={styles.exportOptionLabel}>Export as CSV</Text>
+              <Text style={styles.exportOptionDesc}>Open in Excel, Sheets, or Numbers</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={COLORS.muted} />
+          </Pressable>
+
+          <View style={styles.exportDivider} />
+
+          <Pressable
+            style={[styles.exportOption, loading && { opacity: 0.5 }]}
+            onPress={onExportPDF}
+            disabled={loading}
+          >
+            <View style={[styles.exportOptionIcon, { backgroundColor: '#FFF1F2' }]}>
+              {loading ? (
+                <ActivityIndicator size="small" color={COLORS.negative} />
+              ) : (
+                <Ionicons name="document-text-outline" size={22} color={COLORS.negative} />
+              )}
+            </View>
+            <View style={styles.exportOptionInfo}>
+              <Text style={styles.exportOptionLabel}>Export as PDF</Text>
+              <Text style={styles.exportOptionDesc}>Save, share, or print a styled report</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={COLORS.muted} />
+          </Pressable>
+
+          <Pressable style={styles.exportCancelBtn} onPress={onClose}>
+            <Text style={styles.exportCancelText}>Cancel</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ExpenseDetailScreen({ route, navigation }) {
   const { categoryId, categoryName } = route.params;
   const insets = useSafeAreaInsets();
@@ -385,19 +530,29 @@ export default function ExpenseDetailScreen({ route, navigation }) {
   const [loading,         setLoading]         = useState(true);
   const [refreshing,      setRefreshing]      = useState(false);
   const [editingId,       setEditingId]       = useState(null);
+  const [searchQuery,     setSearchQuery]     = useState('');
+  const [filter,          setFilter]          = useState('All');
+  const [deletedExpense,  setDeletedExpense]  = useState(null);
+  const [showSnackbar,    setShowSnackbar]    = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
-  const [exporting,       setExporting]       = useState(null);
-  const [exportError,     setExportError]     = useState(null);
+  const [exporting,       setExporting]       = useState(false);
 
+  const currentMonth = new Date().toISOString().slice(0, 7);
   const userId   = auth.currentUser?.uid;
-  const category = BUDGET_CATEGORIES.find((c) => c.id === categoryId);
+  const isAllCategories = categoryId === 'all';
+  const category = isAllCategories ? null : BUDGET_CATEGORIES.find((c) => c.id === categoryId);
 
   const loadData = useCallback(async () => {
     try {
-      const [expData, budgetData] = await Promise.all([
-        getExpensesByCategory(userId, categoryId),
-        getCurrentBudget(userId),
-      ]);
+      let expData;
+      if (isAllCategories) {
+        expData = await getExpenses(userId, currentMonth);
+      } else {
+        expData = await getExpensesByCategory(userId, categoryId, currentMonth);
+      }
+      
+      const budgetData = await getBudgetByMonth(userId, currentMonth);
+      
       setExpenses(expData || []);
       setBudget(budgetData);
     } catch (e) {
@@ -406,95 +561,99 @@ export default function ExpenseDetailScreen({ route, navigation }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [userId, categoryId]);
+  }, [userId, categoryId, isAllCategories, currentMonth]);
 
   useEffect(() => { loadData(); }, [loadData]);
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
+  const filteredExpenses = useMemo(() => {
+    let result = expenses;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(e => (e.note || '').toLowerCase().includes(q));
+    }
+    if (filter === 'Over R100') {
+      result = result.filter(e => e.amount > 100);
+    } else if (filter === 'This Week') {
+      const now = new Date();
+      const weekAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+      result = result.filter(e => new Date(e.date) >= weekAgo);
+    }
+    return result;
+  }, [expenses, searchQuery, filter]);
+
   const handleDelete = useCallback(async (expense) => {
+    setDeletedExpense(expense);
+    setShowSnackbar(true);
+    setExpenses((prev) => prev.filter((e) => e.id !== expense.id));
     try {
-      await deleteExpense(userId, expense);
-      setExpenses((prev) => prev.filter((e) => e.id !== expense.id));
-      setBudget((prev) => {
-        if (!prev) return prev;
-        const cat = prev.categories?.[expense.category];
-        if (!cat) return prev;
-        return {
-          ...prev,
-          spentTotal: Math.max(0, (prev.spentTotal || 0) - expense.amount),
-          categories: {
-            ...prev.categories,
-            [expense.category]: {
-              ...cat,
-              spent: Math.max(0, (cat.spent || 0) - expense.amount),
-            },
-          },
-        };
-      });
+      await deleteExpense(userId, expense.id);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
       console.error('handleDelete:', e);
+      setExpenses((prev) => [...prev, expense]);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
   }, [userId]);
 
+  const handleUndo = useCallback(() => {
+    if (deletedExpense) {
+      setExpenses((prev) => [...prev, deletedExpense]);
+      setDeletedExpense(null);
+      setShowSnackbar(false);
+    }
+  }, [deletedExpense]);
+
   const handleSave = useCallback(async (original, updates) => {
     try {
-      await updateExpense(userId, original.id, updates, original);
+      await updateExpense(userId, original.id, updates);
       setExpenses((prev) =>
         prev.map((e) => (e.id === original.id ? { ...e, ...updates } : e))
       );
-      const diff = (updates.amount || original.amount) - original.amount;
-      if (diff !== 0) {
-        setBudget((prev) => {
-          if (!prev) return prev;
-          const cat = prev.categories?.[categoryId];
-          if (!cat) return prev;
-          return {
-            ...prev,
-            spentTotal: (prev.spentTotal || 0) + diff,
-            categories: {
-              ...prev.categories,
-              [categoryId]: {
-                ...cat,
-                spent: Math.max(0, (cat.spent || 0) + diff),
-              },
-            },
-          };
-        });
-      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setEditingId(null);
     } catch (e) {
       console.error('handleSave:', e);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
-  }, [userId, categoryId]);
+  }, [userId]);
 
-  const handleExport = async (type) => {
-    setExporting(type);
-    setExportError(null);
+  // ── Export CSV using exportService ──
+  const handleExportCSV = useCallback(async () => {
+    setExporting(true);
     try {
-      if (type === 'csv') {
-        await exportAsCSV(expenses, categoryName);
-      } else {
-        await exportAsPDF(expenses, categoryName, budget, categoryId);
-      }
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await exportAsCSV(filteredExpenses, categoryName);
       setShowExportModal(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
-      console.error('handleExport:', e);
-      setExportError(e.message || 'Export failed. Please try again.');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      console.error('CSV Export Error:', e);
+      Alert.alert('Export Failed', e.message || 'Could not export CSV. Please try again.');
     } finally {
-      setExporting(null);
+      setExporting(false);
     }
-  };
+  }, [filteredExpenses, categoryName]);
 
-  const sections      = useMemo(() => groupByDate(expenses), [expenses]);
-  const catBudget     = budget?.categories?.[categoryId];
-  const totalSpent    = catBudget?.spent    || expenses.reduce((s, e) => s + e.amount, 0);
-  const totalBudgeted = catBudget?.budgeted || 0;
+  // ── Export PDF using exportService ──
+  const handleExportPDF = useCallback(async () => {
+    setExporting(true);
+    try {
+      await exportAsPDF(filteredExpenses, categoryName, budget, categoryId);
+      setShowExportModal(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      console.error('PDF Export Error:', e);
+      Alert.alert('Export Failed', e.message || 'Could not export PDF. Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  }, [filteredExpenses, categoryName, budget, categoryId]);
+
+  const sections = useMemo(() => groupByDate(filteredExpenses), [filteredExpenses]);
+  
+  const totalSpent = filteredExpenses.reduce((s, e) => s + (e.amount || 0), 0);
+  const totalBudgeted = isAllCategories 
+    ? (budget?.totalBudget || 0)
+    : (budget?.categories?.[categoryId]?.budgeted || 0);
 
   const renderItem = useCallback(({ item }) => (
     <SwipeableExpenseItem
@@ -504,8 +663,9 @@ export default function ExpenseDetailScreen({ route, navigation }) {
       onEdit={(id) => setEditingId((prev) => (prev === id ? null : id))}
       onSave={handleSave}
       onCancelEdit={() => setEditingId(null)}
+      categoryColor={category?.color}
     />
-  ), [editingId, handleDelete, handleSave]);
+  ), [editingId, handleDelete, handleSave, category]);
 
   const renderSectionHeader = useCallback(({ section }) => (
     <View style={styles.sectionHeader}>
@@ -516,49 +676,71 @@ export default function ExpenseDetailScreen({ route, navigation }) {
 
   if (loading) {
     return (
-      <LinearGradient colors={['#F8FAFC', '#E2E8F0']} style={styles.flex}>
+      <View style={[styles.flex, { backgroundColor: COLORS.background }]}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={COLORS.accent} />
-          <Text style={styles.loadingText}>Loading expenses…</Text>
+          <Text style={styles.loadingText}>Loading expenses...</Text>
         </View>
-      </LinearGradient>
+      </View>
     );
   }
 
   return (
-    <LinearGradient colors={['#F8FAFC', '#E2E8F0', '#CBD5E1']} style={styles.flex}>
+    <View style={[styles.flex, { backgroundColor: COLORS.background }]}>
       <StatusBar style="dark" />
 
-      <View style={[styles.navHeader, { paddingTop: insets.top + 8 }]}>
-        <Pressable
-          style={styles.backBtn}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            navigation.goBack();
-          }}
-        >
-          <Ionicons name="chevron-back" size={22} color={COLORS.text} />
-        </Pressable>
+      {/* ── Header with Tab Bar ── */}
+      <View style={{ backgroundColor: COLORS.background }}>
+        <View style={{ paddingTop: insets.top }}>
+          <ScrollableTopTabBar
+            tabs={['Budget', 'Expenses']}
+            activeTab="Expenses"
+            onTabPress={(tab) => {
+              if (tab === 'Budget') {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                navigation.goBack();
+              }
+            }}
+          />
+        </View>
 
-        <Text style={styles.navTitle}>{categoryName}</Text>
-
-        <Pressable
-          style={[styles.exportBtn, expenses.length === 0 && { opacity: 0.3 }]}
-          onPress={() => {
-            if (expenses.length === 0) return;
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            setExportError(null);
-            setShowExportModal(true);
-          }}
-        >
-          <Ionicons name="share-outline" size={18} color="#FFF" />
-        </Pressable>
+        {/* Category Header Row */}
+        <View style={styles.navHeader}>
+          <Pressable
+            style={styles.backBtn}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              navigation.goBack();
+            }}
+          >
+            <Ionicons name="chevron-back" size={20} color={COLORS.text} />
+          </Pressable>
+          <Text style={styles.navTitle}>{categoryName}</Text>
+          <Pressable
+            style={[styles.exportBtn, filteredExpenses.length === 0 && { opacity: 0.3 }]}
+            onPress={() => {
+              if (filteredExpenses.length === 0) return;
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowExportModal(true);
+            }}
+            disabled={filteredExpenses.length === 0}
+          >
+            <Ionicons name="share-outline" size={18} color="#FFF" />
+          </Pressable>
+        </View>
       </View>
+
+      {/* ── Search & Filter ── */}
+      <SearchFilterBar
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        filter={filter}
+        onFilterChange={setFilter}
+      />
 
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={insets.top + 60}
       >
         <SectionList
           sections={sections}
@@ -569,284 +751,306 @@ export default function ExpenseDetailScreen({ route, navigation }) {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[
             styles.listContent,
-            { paddingBottom: insets.bottom + 32 },
+            { paddingBottom: insets.bottom + BOTTOM_NAV_HEIGHT + 20 },
           ]}
           ListHeaderComponent={
             <SummaryBar
               category={category}
               spent={totalSpent}
               budgeted={totalBudgeted}
-              count={expenses.length}
+              count={filteredExpenses.length}
+              isAllCategories={isAllCategories}
+              month={currentMonth}
             />
           }
-          ListEmptyComponent={<EmptyState categoryName={categoryName} />}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Ionicons name="receipt-outline" size={48} color={COLORS.muted} />
+              <Text style={styles.emptyTitle}>No expenses found</Text>
+              <Text style={styles.emptySubtitle}>
+                {searchQuery || filter !== 'All'
+                  ? 'Try adjusting your search or filters'
+                  : `Your ${categoryName} expenses will appear here`}
+              </Text>
+            </View>
+          }
           refreshing={refreshing}
           onRefresh={() => { setRefreshing(true); loadData(); }}
         />
       </KeyboardAvoidingView>
 
-      <Modal
+      {/* ── Undo Snackbar ── */}
+      <UndoSnackbar
+        visible={showSnackbar}
+        onUndo={handleUndo}
+        onDismiss={() => { setShowSnackbar(false); setDeletedExpense(null); }}
+        bottomInset={insets.bottom}
+      />
+
+      {/* ── Export Modal ── */}
+      <ExportModal
         visible={showExportModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => { if (!exporting) setShowExportModal(false); }}
-      >
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => { if (!exporting) setShowExportModal(false); }}
-        >
-          <Pressable style={[styles.exportSheet, { paddingBottom: insets.bottom + 16 }]}>
-            <View style={styles.exportHandle} />
-
-            <Text style={styles.exportSheetTitle}>Export Expenses</Text>
-            <Text style={styles.exportSheetSub}>
-              {expenses.length} transaction{expenses.length !== 1 ? 's' : ''} · {categoryName}
-            </Text>
-
-            <Pressable
-              style={[styles.exportOption, exporting === 'pdf' && { opacity: 0.35 }]}
-              onPress={() => handleExport('csv')}
-              disabled={!!exporting}
-            >
-              <View style={[styles.exportOptionIcon, { backgroundColor: '#F0FDF4' }]}>
-                {exporting === 'csv' ? (
-                  <ActivityIndicator size="small" color={COLORS.positive} />
-                ) : (
-                  <Ionicons name="grid-outline" size={24} color={COLORS.positive} />
-                )}
-              </View>
-              <View style={styles.exportOptionInfo}>
-                <Text style={styles.exportOptionLabel}>
-                  {exporting === 'csv' ? 'Generating CSV…' : 'Export as CSV'}
-                </Text>
-                <Text style={styles.exportOptionDesc}>
-                  Open in Excel, Google Sheets, or Numbers
-                </Text>
-              </View>
-              {!exporting && (
-                <Ionicons name="chevron-forward" size={18} color={COLORS.muted} />
-              )}
-            </Pressable>
-
-            <View style={styles.exportDivider} />
-
-            <Pressable
-              style={[styles.exportOption, exporting === 'csv' && { opacity: 0.35 }]}
-              onPress={() => handleExport('pdf')}
-              disabled={!!exporting}
-            >
-              <View style={[styles.exportOptionIcon, { backgroundColor: '#FFF1F2' }]}>
-                {exporting === 'pdf' ? (
-                  <ActivityIndicator size="small" color={COLORS.negative} />
-                ) : (
-                  <Ionicons name="document-text-outline" size={24} color={COLORS.negative} />
-                )}
-              </View>
-              <View style={styles.exportOptionInfo}>
-                <Text style={styles.exportOptionLabel}>
-                  {exporting === 'pdf' ? 'Generating PDF…' : 'Export as PDF'}
-                </Text>
-                <Text style={styles.exportOptionDesc}>
-                  Styled report — save, share, or print
-                </Text>
-              </View>
-              {!exporting && (
-                <Ionicons name="chevron-forward" size={18} color={COLORS.muted} />
-              )}
-            </Pressable>
-
-            {exportError ? (
-              <View style={styles.exportError}>
-                <Ionicons name="alert-circle-outline" size={15} color={COLORS.negative} />
-                <Text style={styles.exportErrorText}>{exportError}</Text>
-              </View>
-            ) : null}
-
-            {!exporting && (
-              <Pressable
-                style={styles.exportCancelBtn}
-                onPress={() => { setExportError(null); setShowExportModal(false); }}
-              >
-                <Text style={styles.exportCancelText}>Cancel</Text>
-              </Pressable>
-            )}
-          </Pressable>
-        </Pressable>
-      </Modal>
-    </LinearGradient>
+        onClose={() => { if (!exporting) setShowExportModal(false); }}
+        onExportCSV={handleExportCSV}
+        onExportPDF={handleExportPDF}
+        loading={exporting}
+        expenses={filteredExpenses}
+        categoryName={categoryName}
+        month={currentMonth}
+      />
+    </View>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   loadingContainer: {
     flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12,
   },
   loadingText: {
-    fontSize: 15, fontFamily: FONTS.semiBold, color: COLORS.muted,
+    fontSize: 14, fontFamily: FONTS.semiBold, color: COLORS.muted,
   },
+
+  // ── Nav Header ──
   navHeader: {
-    flexDirection: 'row', alignItems: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingBottom: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
   },
   backBtn: {
-    width: 40, height: 40, borderRadius: 20,
+    width: 36, height: 36, borderRadius: 18,
     backgroundColor: 'rgba(255,255,255,0.9)',
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#CBD5E1', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15, shadowRadius: 6, elevation: 2,
+    shadowColor: '#CBD5E1', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1, shadowRadius: 4, elevation: 1,
   },
   navTitle: {
-    fontSize: 18, fontFamily: FONTS.bold, color: COLORS.text, letterSpacing: -0.3,
+    fontSize: 16, fontFamily: FONTS.bold, color: COLORS.text, letterSpacing: -0.3,
   },
   exportBtn: {
-    width: 40, height: 40, borderRadius: 20,
+    width: 36, height: 36, borderRadius: 18,
     backgroundColor: COLORS.accent,
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: COLORS.accent, shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2, shadowRadius: 8, elevation: 4,
+    shadowColor: COLORS.accent, shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15, shadowRadius: 4, elevation: 2,
   },
-  summaryBar: {
-    marginHorizontal: 16, marginBottom: 20,
-    borderRadius: 24, overflow: 'hidden',
-    shadowColor: '#CBD5E1', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12, shadowRadius: 16, elevation: 4,
+
+  // ── Search & Filter ──
+  searchFilterContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 8,
+    marginTop: 4,
   },
-  summaryGradient: { padding: 20 },
+  searchInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 7,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.text,
+    padding: 0,
+  },
+  filterChips: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  filterChipText: {
+    fontSize: 11,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.muted,
+  },
+
+  // ── Summary Bar ──
+  summaryBar: { marginHorizontal: 16, marginBottom: 10, marginTop: 4 },
+  summaryCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
   summaryHeader: {
-    flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16,
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12,
   },
-  summaryDot:     { width: 10, height: 10, borderRadius: 5 },
-  summaryCatName: { flex: 1, fontSize: 16, fontFamily: FONTS.bold, color: COLORS.text },
-  summaryCount:   { fontSize: 12, fontFamily: FONTS.semiBold, color: COLORS.muted },
-  summaryStats:   { flexDirection: 'row', marginBottom: 16 },
-  summaryStat:    { flex: 1, alignItems: 'center' },
+  summaryDot: { width: 8, height: 8, borderRadius: 4 },
+  summaryHeaderText: { flex: 1 },
+  summaryCatName: { fontSize: 15, fontFamily: FONTS.bold, color: COLORS.text },
+  summaryCount: { fontSize: 11, fontFamily: FONTS.semiBold, color: COLORS.muted, marginTop: 1 },
+  summaryStats: { flexDirection: 'row', marginBottom: 12 },
+  summaryStat: { flex: 1, alignItems: 'center' },
   summaryStatLabel: {
-    fontSize: 11, fontFamily: FONTS.semiBold, color: COLORS.muted,
-    textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4,
+    fontSize: 9, fontFamily: FONTS.semiBold, color: COLORS.muted,
+    letterSpacing: 0.8, marginBottom: 4,
   },
   summaryStatValue: {
-    fontSize: 20, fontFamily: FONTS.bold, color: COLORS.text, letterSpacing: -0.5,
+    fontSize: 18, fontFamily: FONTS.bold, letterSpacing: -0.3,
   },
-  summaryDivider: { width: 1, backgroundColor: COLORS.border, marginVertical: 4 },
+  summaryDivider: { width: 1, backgroundColor: COLORS.border, marginVertical: 2 },
   summaryProgressTrack: {
-    height: 6, backgroundColor: COLORS.border, borderRadius: 3, overflow: 'hidden',
+    height: 5, backgroundColor: COLORS.border, borderRadius: 2.5, overflow: 'hidden',
   },
-  summaryProgressFill: { height: '100%', borderRadius: 3 },
+  summaryProgressFill: { height: '100%', borderRadius: 2.5 },
   overBudgetText: {
-    marginTop: 8, fontSize: 12, fontFamily: FONTS.semiBold, color: COLORS.negative,
+    marginTop: 6, fontSize: 11, fontFamily: FONTS.semiBold,
+    color: COLORS.negative, textAlign: 'center',
   },
-  listContent:  { paddingTop: 8 },
+
+  // ── Section List ──
+  listContent: { paddingTop: 4 },
   sectionHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 8, marginBottom: 4,
+    paddingHorizontal: 16, paddingVertical: 6,
   },
-  sectionDate:  { fontSize: 14, fontFamily: FONTS.bold,     color: COLORS.text },
-  sectionTotal: { fontSize: 14, fontFamily: FONTS.semiBold, color: COLORS.muted },
-  swipeWrapper: {
-    marginHorizontal: 16, position: 'relative', overflow: 'hidden',
-  },
+  sectionDate: { fontSize: 13, fontFamily: FONTS.bold, color: COLORS.text },
+  sectionTotal: { fontSize: 13, fontFamily: FONTS.semiBold, color: COLORS.muted },
+
+  // ── Swipeable Item ──
+  swipeWrapper: { marginHorizontal: 16, position: 'relative' },
   deleteReveal: {
-    position: 'absolute', right: 0, top: 0, bottom: 0,
-    width: DELETE_REVEAL, borderRadius: 18, overflow: 'hidden',
+    position: 'absolute', right: 4, top: 0, bottom: 0,
+    width: DELETE_REVEAL, borderRadius: 16, overflow: 'hidden',
   },
   deleteBtn: {
     flex: 1, backgroundColor: COLORS.negative,
-    alignItems: 'center', justifyContent: 'center', gap: 3,
+    alignItems: 'center', justifyContent: 'center', gap: 4,
+    paddingRight: 4,
   },
-  deleteBtnLabel: { fontSize: 10, fontFamily: FONTS.semiBold, color: '#FFF' },
+  deleteBtnLabel: { fontSize: 10, fontFamily: FONTS.semiBold, color: '#FFF', marginTop: 2 },
   expenseCard: {
-    backgroundColor: COLORS.surface, borderRadius: 18,
-    shadowColor: '#CBD5E1', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08, shadowRadius: 8, elevation: 2, overflow: 'hidden',
+    backgroundColor: COLORS.surface, borderRadius: 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03, shadowRadius: 3, elevation: 1, overflow: 'hidden',
   },
-  expenseRow: {
-    flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12,
+  expenseRow: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 10 },
+  expenseLeft: { flex: 1, gap: 4 },
+  expenseNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  expenseCategoryDot: { width: 8, height: 8, borderRadius: 4 },
+  expenseNote: { fontSize: 14, fontFamily: FONTS.semiBold, color: COLORS.text, flex: 1 },
+  expenseMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 16 },
+  expenseTime: { fontSize: 11, fontFamily: FONTS.semiBold, color: COLORS.muted },
+  expenseCategoryLabel: {
+    fontSize: 10, fontFamily: FONTS.semiBold, color: COLORS.muted,
+    backgroundColor: COLORS.inputBg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
+    overflow: 'hidden',
   },
-  expenseLeft:   { flex: 1, gap: 4 },
-  expenseNote:   { fontSize: 15, fontFamily: FONTS.semiBold, color: COLORS.text },
-  expenseTime:   { fontSize: 11, fontFamily: FONTS.semiBold, color: COLORS.muted },
-  expenseRight:  { alignItems: 'flex-end', gap: 4 },
+  expenseRight: { alignItems: 'flex-end', gap: 3 },
   expenseAmount: {
-    fontSize: 17, fontFamily: FONTS.bold, color: COLORS.text, letterSpacing: -0.3,
+    fontSize: 15, fontFamily: FONTS.bold, color: COLORS.text, letterSpacing: -0.2,
   },
-  editHint: { fontSize: 10, fontFamily: FONTS.semiBold, color: COLORS.muted },
-  editForm: { padding: 16, gap: 12 },
-  editAmountRow: {
-    flexDirection: 'row', alignItems: 'flex-end',
-    borderBottomWidth: 2, borderBottomColor: COLORS.accent, paddingBottom: 8,
-  },
+  editHintRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  editHint: { fontSize: 9, fontFamily: FONTS.semiBold, color: COLORS.muted },
+
+  // ── Edit Form ──
+  editForm: { padding: 14, gap: 10 },
+  editAmountRow: { flexDirection: 'row', alignItems: 'flex-end', paddingBottom: 6 },
   editCurrencyPrefix: {
-    fontSize: 28, fontFamily: FONTS.bold, color: COLORS.muted, marginRight: 4, lineHeight: 40,
+    fontSize: 28, fontFamily: FONTS.bold, color: COLORS.muted,
+    marginRight: 4, lineHeight: 36,
   },
   editAmountInput: {
-    flex: 1, fontSize: 38, fontFamily: FONTS.bold,
-    color: COLORS.text, letterSpacing: -1, padding: 0, lineHeight: 46,
+    flex: 1, fontSize: 36, fontFamily: FONTS.bold,
+    color: COLORS.text, letterSpacing: -1, padding: 0, lineHeight: 42,
   },
+  editDivider: { height: 1, backgroundColor: COLORS.border },
   editNoteRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: COLORS.inputBg, borderRadius: 12,
-    paddingHorizontal: 12, paddingVertical: 12,
-    borderWidth: 1, borderColor: COLORS.border,
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    backgroundColor: COLORS.inputBg, borderRadius: 20,
+    paddingHorizontal: 14, paddingVertical: 10,
   },
   editNoteInput: {
     flex: 1, fontSize: 14, fontFamily: FONTS.semiBold, color: COLORS.text, padding: 0,
   },
-  editActions:   { flexDirection: 'row', gap: 10 },
+  editActions: { flexDirection: 'row', gap: 8 },
   cancelBtn: {
-    flex: 1, paddingVertical: 14, borderRadius: 14,
-    backgroundColor: COLORS.border, alignItems: 'center', justifyContent: 'center',
+    flex: 1, paddingVertical: 12, borderRadius: 12,
+    backgroundColor: COLORS.inputBg, alignItems: 'center', justifyContent: 'center',
   },
-  cancelBtnText: { fontSize: 15, fontFamily: FONTS.semiBold, color: COLORS.muted },
-  saveBtn:       { flex: 1, borderRadius: 14, overflow: 'hidden' },
-  saveBtnGradient: {
-    alignItems: 'center', justifyContent: 'center', paddingVertical: 14,
-  },
-  saveBtnText:   { fontSize: 15, fontFamily: FONTS.bold, color: '#FFF' },
+  cancelBtnText: { fontSize: 14, fontFamily: FONTS.semiBold, color: COLORS.muted },
+  saveBtn: { flex: 1, borderRadius: 12, overflow: 'hidden' },
+  saveBtnGradient: { alignItems: 'center', justifyContent: 'center', paddingVertical: 12 },
+  saveBtnText: { fontSize: 14, fontFamily: FONTS.bold, color: '#FFF' },
+
+  // ── Empty State ──
   emptyState: {
     alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 60, paddingHorizontal: 40, gap: 12,
+    paddingVertical: 50, paddingHorizontal: 40, gap: 10,
   },
-  emptyTitle: {
-    fontSize: 20, fontFamily: FONTS.bold, color: COLORS.text, marginTop: 8,
-  },
+  emptyTitle: { fontSize: 18, fontFamily: FONTS.bold, color: COLORS.text, marginTop: 6 },
   emptySubtitle: {
-    fontSize: 14, fontFamily: FONTS.semiBold, color: COLORS.muted,
-    textAlign: 'center', lineHeight: 22,
+    fontSize: 13, fontFamily: FONTS.semiBold, color: COLORS.muted,
+    textAlign: 'center', lineHeight: 20,
   },
+
+  // ── Snackbar ──
+  snackbar: {
+    position: 'absolute', left: 20, right: 20,
+    backgroundColor: COLORS.accent, borderRadius: 14,
+    paddingHorizontal: 18, paddingVertical: 12,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15, shadowRadius: 10, elevation: 6, zIndex: 200,
+  },
+  snackbarText: { fontSize: 14, fontFamily: FONTS.semiBold, color: '#FFF' },
+  snackbarUndo: { fontSize: 14, fontFamily: FONTS.bold, color: COLORS.positive },
+
+  // ── Export Modal ──
   modalOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end',
   },
   exportSheet: {
     backgroundColor: COLORS.surface,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 4,
-    shadowColor: '#000', shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.12, shadowRadius: 24, elevation: 16,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingTop: 4, paddingBottom: 24,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.1, shadowRadius: 16, elevation: 12,
   },
   exportHandle: {
-    width: 36, height: 4, borderRadius: 2, backgroundColor: COLORS.border,
-    alignSelf: 'center', marginVertical: 12,
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: COLORS.border, alignSelf: 'center', marginVertical: 12,
   },
-  exportSheetTitle: {
-    fontSize: 20, fontFamily: FONTS.bold, color: COLORS.text,
+  exportTitle: {
+    fontSize: 18, fontFamily: FONTS.bold, color: COLORS.text,
     paddingHorizontal: 20, marginBottom: 4,
   },
-  exportSheetSub: {
-    fontSize: 13, fontFamily: FONTS.semiBold, color: COLORS.muted,
+  exportSubtitle: {
+    fontSize: 12, fontFamily: FONTS.semiBold, color: COLORS.muted,
     paddingHorizontal: 20, marginBottom: 16,
   },
   exportOption: {
-    flexDirection: 'row', alignItems: 'center',
-    gap: 14, paddingHorizontal: 20, paddingVertical: 16,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 20, paddingVertical: 14,
   },
   exportOptionIcon: {
-    width: 50, height: 50, borderRadius: 16,
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    width: 44, height: 44, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
   },
-  exportOptionInfo:  { flex: 1 },
+  exportOptionInfo: { flex: 1 },
   exportOptionLabel: {
-    fontSize: 16, fontFamily: FONTS.bold, color: COLORS.text, marginBottom: 3,
+    fontSize: 15, fontFamily: FONTS.bold, color: COLORS.text, marginBottom: 2,
   },
   exportOptionDesc: {
     fontSize: 12, fontFamily: FONTS.semiBold, color: COLORS.muted,
@@ -854,18 +1058,10 @@ const styles = StyleSheet.create({
   exportDivider: {
     height: 1, backgroundColor: COLORS.border, marginHorizontal: 20,
   },
-  exportError: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#FFF1F2', borderRadius: 12, padding: 12,
-    marginHorizontal: 20, marginTop: 8,
-    borderLeftWidth: 3, borderLeftColor: COLORS.negative,
-  },
-  exportErrorText: {
-    flex: 1, fontSize: 13, fontFamily: FONTS.semiBold, color: '#BE123C',
-  },
   exportCancelBtn: {
-    marginHorizontal: 20, marginTop: 12, paddingVertical: 15,
-    borderRadius: 16, backgroundColor: COLORS.border, alignItems: 'center',
+    marginHorizontal: 20, marginTop: 12,
+    paddingVertical: 14, borderRadius: 14,
+    backgroundColor: COLORS.inputBg, alignItems: 'center',
   },
   exportCancelText: {
     fontSize: 15, fontFamily: FONTS.semiBold, color: COLORS.muted,

@@ -264,7 +264,7 @@ export default function BottomTabs() {
         headerShown: false, 
         lazy: true 
       }}
-      backBehavior="initialRoute"
+      backBehavior="history"
     >
       <Tab.Screen name="Home" component={DashboardScreen} />
       <Tab.Screen name="Budget" component={BudgetScreen} />

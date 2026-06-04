@@ -1,6 +1,12 @@
+// src/services/exportService.js
+
 import * as Print      from 'expo-print';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy'; // Import from legacy
 import * as Sharing    from 'expo-sharing';
+
+// Alternative: If you want to use the new API, import like this:
+// import { File, Directory } from 'expo-file-system';
+// But the legacy API is simpler for this use case
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const safeFilename = (name) =>
@@ -25,92 +31,98 @@ const groupByDate = (expenses) => {
 
 // ─── CSV Export ───────────────────────────────────────────────────────────────
 export const exportAsCSV = async (expenses, categoryName) => {
-  const sorted = [...expenses].sort(
-    (a, b) => new Date(b.date) - new Date(a.date)
-  );
+  try {
+    const sorted = [...expenses].sort(
+      (a, b) => new Date(b.date) - new Date(a.date)
+    );
 
-  const header = 'Date,Time,Description,Amount (R)\n';
+    const header = 'Date,Time,Description,Amount (R)\n';
 
-  const rows = sorted
-    .map((e) => {
-      const d       = new Date(e.date);
-      const dateStr = d.toLocaleDateString('en-ZA');
-      const timeStr = d.toLocaleTimeString('en-ZA', {
-        hour: '2-digit', minute: '2-digit',
-      });
-      // Wrap note in quotes to handle commas inside text
-      const note    = `"${(e.note || 'No description').replace(/"/g, '""')}"`;
-      return `${dateStr},${timeStr},${note},${e.amount}`;
-    })
-    .join('\n');
+    const rows = sorted
+      .map((e) => {
+        const d       = new Date(e.date);
+        const dateStr = d.toLocaleDateString('en-ZA');
+        const timeStr = d.toLocaleTimeString('en-ZA', {
+          hour: '2-digit', minute: '2-digit',
+        });
+        // Wrap note in quotes to handle commas inside text
+        const note    = `"${(e.note || 'No description').replace(/"/g, '""')}"`;
+        return `${dateStr},${timeStr},${note},${e.amount}`;
+      })
+      .join('\n');
 
-  const total   = expenses.reduce((s, e) => s + e.amount, 0);
-  const summary = `\nTotal,,,${total}`;
+    const total   = expenses.reduce((s, e) => s + e.amount, 0);
+    const summary = `\nTotal,,,${total}`;
 
-  const csv      = header + rows + summary;
-  const filename = `${safeFilename(categoryName)}_expenses_${dateStamp()}.csv`;
-  const fileUri  = FileSystem.documentDirectory + filename;
+    const csv      = header + rows + summary;
+    const filename = `${safeFilename(categoryName)}_expenses_${dateStamp()}.csv`;
+    const fileUri  = FileSystem.documentDirectory + filename;
 
-  await FileSystem.writeAsStringAsync(fileUri, csv, {
-    encoding: FileSystem.EncodingType.UTF8,
-  });
+    await FileSystem.writeAsStringAsync(fileUri, csv, {
+      encoding: FileSystem.EncodingType.UTF8,
+    });
 
-  const canShare = await Sharing.isAvailableAsync();
-  if (!canShare) throw new Error('Sharing is not available on this device.');
+    const canShare = await Sharing.isAvailableAsync();
+    if (!canShare) throw new Error('Sharing is not available on this device.');
 
-  await Sharing.shareAsync(fileUri, {
-    mimeType:    'text/csv',
-    dialogTitle: `Export ${categoryName} Expenses`,
-    UTI:         'public.comma-separated-values-text',
-  });
+    await Sharing.shareAsync(fileUri, {
+      mimeType:    'text/csv',
+      dialogTitle: `Export ${categoryName} Expenses`,
+      UTI:         'public.comma-separated-values-text',
+    });
+  } catch (error) {
+    console.error('CSV Export Error:', error);
+    throw error;
+  }
 };
 
 // ─── PDF Export ───────────────────────────────────────────────────────────────
 export const exportAsPDF = async (expenses, categoryName, budgetData, categoryId) => {
-  const catBudget = budgetData?.categories?.[categoryId];
-  const budgeted  = catBudget?.budgeted || 0;
-  const spent     = expenses.reduce((s, e) => s + e.amount, 0);
-  const remaining = budgeted - spent;
-  const isOver    = remaining < 0;
+  try {
+    const catBudget = budgetData?.categories?.[categoryId];
+    const budgeted  = catBudget?.budgeted || 0;
+    const spent     = expenses.reduce((s, e) => s + e.amount, 0);
+    const remaining = budgeted - spent;
+    const isOver    = remaining < 0;
 
-  const generatedOn = new Date().toLocaleDateString('en-ZA', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-  });
+    const generatedOn = new Date().toLocaleDateString('en-ZA', {
+      weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+    });
 
-  // ── Build table rows grouped by date ──
-  const tableRows = groupByDate(expenses)
-    .map(([dateLabel, items]) => {
-      const dayTotal = items.reduce((s, e) => s + e.amount, 0);
+    // ── Build table rows grouped by date ──
+    const tableRows = groupByDate(expenses)
+      .map(([dateLabel, items]) => {
+        const dayTotal = items.reduce((s, e) => s + e.amount, 0);
 
-      const itemRows = items
-        .map((e) => {
-          const time = new Date(e.date).toLocaleTimeString('en-ZA', {
-            hour: '2-digit', minute: '2-digit',
-          });
-          const note = (e.note || 'No description')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
-          return `
-            <tr>
-              <td class="cell">${time}</td>
-              <td class="cell">${note}</td>
-              <td class="cell right bold">R&nbsp;${e.amount.toLocaleString('en-ZA')}</td>
-            </tr>`;
-        })
-        .join('');
+        const itemRows = items
+          .map((e) => {
+            const time = new Date(e.date).toLocaleTimeString('en-ZA', {
+              hour: '2-digit', minute: '2-digit',
+            });
+            const note = (e.note || 'No description')
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;');
+            return `
+              <tr>
+                <td class="cell">${time}</td>
+                <td class="cell">${note}</td>
+                <td class="cell right bold">R&nbsp;${e.amount.toLocaleString('en-ZA')}</td>
+              </tr>`;
+          })
+          .join('');
 
-      return `
-        <tr class="group-header">
-          <td colspan="2" class="group-date">${dateLabel}</td>
-          <td class="group-total">R&nbsp;${dayTotal.toLocaleString('en-ZA')}</td>
-        </tr>
-        ${itemRows}`;
-    })
-    .join('');
+        return `
+          <tr class="group-header">
+            <td colspan="2" class="group-date">${dateLabel}</td>
+            <td class="group-total">R&nbsp;${dayTotal.toLocaleString('en-ZA')}</td>
+          </tr>
+          ${itemRows}`;
+      })
+      .join('');
 
-  // ── HTML template ──
-  const html = `
+    // ── HTML template ──
+    const html = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -326,20 +338,26 @@ export const exportAsPDF = async (expenses, categoryName, budgetData, categoryId
 </body>
 </html>`;
 
-  // ── Generate PDF ──
-  const { uri } = await Print.printToFileAsync({ html, base64: false });
+    // ── Generate PDF ──
+    const { uri } = await Print.printToFileAsync({ html, base64: false });
 
-  // Rename to a meaningful filename
-  const filename = `${safeFilename(categoryName)}_expenses_${dateStamp()}.pdf`;
-  const newUri   = FileSystem.documentDirectory + filename;
-  await FileSystem.moveAsync({ from: uri, to: newUri });
+    // Rename to a meaningful filename
+    const filename = `${safeFilename(categoryName)}_expenses_${dateStamp()}.pdf`;
+    const newUri   = FileSystem.documentDirectory + filename;
+    
+    // FIXED: Use the new API or legacy moveAsync
+    await FileSystem.moveAsync({ from: uri, to: newUri });
 
-  const canShare = await Sharing.isAvailableAsync();
-  if (!canShare) throw new Error('Sharing is not available on this device.');
+    const canShare = await Sharing.isAvailableAsync();
+    if (!canShare) throw new Error('Sharing is not available on this device.');
 
-  await Sharing.shareAsync(newUri, {
-    mimeType:    'application/pdf',
-    dialogTitle: `Export ${categoryName} Expenses`,
-    UTI:         'com.adobe.pdf',
-  });
+    await Sharing.shareAsync(newUri, {
+      mimeType:    'application/pdf',
+      dialogTitle: `Export ${categoryName} Expenses`,
+      UTI:         'com.adobe.pdf',
+    });
+  } catch (error) {
+    console.error('PDF Export Error:', error);
+    throw error;
+  }
 };

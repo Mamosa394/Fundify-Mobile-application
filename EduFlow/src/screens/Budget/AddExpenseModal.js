@@ -1,4 +1,4 @@
-// src/screens/Budget/AddExpenseScreen.js
+// src/screens/Budget/AddExpenseModal.js
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -56,9 +56,10 @@ const parseAmount = (value) => {
 
 const QUICK_AMOUNTS = [20, 50, 100, 200, 500];
 
-export default function AddExpenseScreen({ navigation, route }) {
+export default function AddExpenseModal({ navigation, route }) {
   const [amount, setAmount] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState(null);
+  const [selectedCategory, setSelectedCategory] =
+   useState(route?.params?.categoryId || null);
   const [note, setNote] = useState('');
   const [date, setDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -116,7 +117,7 @@ export default function AddExpenseScreen({ navigation, route }) {
         useNativeDriver: true,
       }),
     ]).start(() => {
-      navigation.goBack();
+      navigation.navigate('Budget');
     });
   };
   
@@ -142,9 +143,11 @@ export default function AddExpenseScreen({ navigation, route }) {
   };
   
   const handleQuickAmount = (amt) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setAmount(amt.toString());
-  };
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+  // Use existing amount handler so warnings update too
+  handleAmountChange(amt.toString());
+};
   
   const handleCategorySelect = (categoryId) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -188,10 +191,38 @@ export default function AddExpenseScreen({ navigation, route }) {
       await addExpense(userId, expenseData);
       
       Alert.alert(
-        'Expense Added ✓',
-        `${formatMoney(amount)} added to ${BUDGET_CATEGORIES.find(c => c.id === selectedCategory)?.name}`,
-        [{ text: 'OK', onPress: handleClose }]
-      );
+  'Expense Added ✓',
+  `${formatMoney(amount)} added to ${
+    BUDGET_CATEGORIES.find(
+      c => c.id === selectedCategory
+    )?.name
+  }`,
+  [
+    {
+      text: 'OK',
+      onPress: () => {
+        Animated.parallel([
+          Animated.spring(slideAnim, {
+            toValue: height,
+            damping: 80,
+            stiffness: 400,
+            useNativeDriver: true,
+          }),
+          Animated.timing(backdropAnim, {
+            toValue: 0,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+        ]).start(() => {
+
+          // Go specifically to Budget screen
+          navigation.navigate('Budget');
+
+        });
+      },
+    },
+  ]
+);
     } catch (error) {
       console.error('Failed to add expense:', error);
       Alert.alert('Error', 'Failed to add expense. Please try again.');

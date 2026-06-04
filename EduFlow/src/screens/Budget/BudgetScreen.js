@@ -10,6 +10,8 @@ import {
   Dimensions,
   ActivityIndicator,
   RefreshControl,
+  BackHandler,
+  Platform,
 } from 'react-native';
 
 import Svg, {
@@ -25,15 +27,22 @@ import * as Haptics       from 'expo-haptics';
 import { SafeAreaView }   from 'react-native-safe-area-context';
 import { StatusBar }      from 'expo-status-bar';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
+import { StackActions } from '@react-navigation/native';
 
-import {
-  getCurrentBudget,
-  getExpenses,
-  BUDGET_CATEGORIES,
-  initializeUserBudget,
-} from '../../services/budgetService';
-
+// Firebase imports
+import { 
+  doc, 
+  collection, 
+  query, 
+  where, 
+  onSnapshot 
+} from 'firebase/firestore';
+import { db } from '../../services/firebase';
 import { auth } from '../../services/firebase';
+
+import { BUDGET_CATEGORIES } from '../../services/budgetService';
+import BudgetGalaxy from '../../components/three/BudgetGalaxy';
+import ScrollableTopTabBar from '../../../src/screens/Budget/components/ScrollableTopBar';
 
 const { width } = Dimensions.get('window');
 
@@ -44,6 +53,7 @@ const COLORS = {
   muted:      '#8E8E93',
   positive:   '#34C759',
   negative:   '#FF3B30',
+  warning:    '#FF9500',
   accent:     '#1C1C1E',
   border:     'rgba(0,0,0,0.06)',
   cardShadow: 'rgba(0,0,0,0.04)',
@@ -52,7 +62,7 @@ const COLORS = {
 const formatMoney = (amount) =>
   `R${Number(amount || 0).toLocaleString('en-ZA')}`;
 
-// ─── BudgetRing ───────────────────────────────────────────────────────────────
+// ─── BudgetRing (Kept as fallback) ────────────────────────────────────────────
 function BudgetRing({ spent = 0, total = 1 }) {
   const size          = 180;
   const strokeWidth   = 14;
@@ -109,7 +119,8 @@ function BudgetRing({ spent = 0, total = 1 }) {
 function CategoryRow({ item, onPress }) {
   const progress    = Math.min(item.budgeted > 0 ? item.spent / item.budgeted : 0, 1);
   const isOverBudget = progress >= 1;
-  const barColor    = isOverBudget ? COLORS.negative : item.color;
+  const isWarning = progress >= 0.8 && progress < 1;
+  const barColor    = isOverBudget ? COLORS.negative : isWarning ? COLORS.warning : item.color;
 
   return (
     <Pressable
@@ -121,7 +132,10 @@ function CategoryRow({ item, onPress }) {
     >
       <View style={styles.categoryIconContainer}>
         <LinearGradient
-          colors={[`${item.color}15`, `${item.color}08`]}
+          colors={[
+            isOverBudget ? `${COLORS.negative}15` : isWarning ? `${COLORS.warning}15` : `${item.color}15`,
+            isOverBudget ? `${COLORS.negative}08` : isWarning ? `${COLORS.warning}08` : `${item.color}08`
+          ]}
           style={styles.categoryIconGradient}
         >
           <View style={[styles.categoryDot, { backgroundColor: barColor }]} />
@@ -135,16 +149,30 @@ function CategoryRow({ item, onPress }) {
             <View
               style={[
                 styles.progressFill,
-                { width: `${Math.min(progress * 100, 100)}%`, backgroundColor: barColor },
+                { 
+                  width: `${Math.min(progress * 100, 100)}%`, 
+                  backgroundColor: barColor 
+                },
               ]}
             />
           </View>
-          <Text style={styles.progressText}>{Math.round(progress * 100)}%</Text>
+          <Text style={[
+            styles.progressText,
+            isOverBudget && styles.progressTextDanger,
+            isWarning && styles.progressTextWarning
+          ]}>
+            {Math.round(progress * 100)}%
+          </Text>
         </View>
       </View>
 
       <View style={styles.categoryAmounts}>
-        <Text style={styles.spentAmount}>{formatMoney(item.spent)}</Text>
+        <Text style={[
+          styles.spentAmount,
+          isOverBudget && styles.spentAmountDanger
+        ]}>
+          {formatMoney(item.spent)}
+        </Text>
         <Text style={styles.budgetedAmount}>/ {formatMoney(item.budgeted)}</Text>
       </View>
     </Pressable>
@@ -152,14 +180,24 @@ function CategoryRow({ item, onPress }) {
 }
 
 // ─── SummaryCard ──────────────────────────────────────────────────────────────
-function SummaryCard({ label, amount, percentage, isPositive, icon }) {
+function SummaryCard({ label, amount, percentage, isPositive, icon, isWarning }) {
   return (
     <View style={styles.summaryCard}>
-      <View style={styles.summaryIconWrap}>
-        <Ionicons name={icon} size={20} color={COLORS.accent} />
+      <View style={[
+        styles.summaryIconWrap,
+        isWarning && styles.summaryIconWarning
+      ]}>
+        <Ionicons 
+          name={icon} 
+          size={20} 
+          color={isWarning ? COLORS.warning : COLORS.accent} 
+        />
       </View>
       <Text style={styles.summaryLabel}>{label}</Text>
-      <Text style={[styles.summaryAmount, isPositive ? styles.positiveText : styles.negativeText]}>
+      <Text style={[
+        styles.summaryAmount, 
+        isPositive ? styles.positiveText : isWarning ? styles.warningText : styles.negativeText
+      ]}>
         {isPositive ? '+' : '-'}{formatMoney(amount)}
       </Text>
       <Text style={styles.summaryPercentage}>{percentage}%</Text>
@@ -172,89 +210,184 @@ export default function BudgetScreen() {
   const navigation = useNavigation();
   const isFocused = useIsFocused();
   
-  const [budget,     setBudget]     = useState(null);
-  const [expenses,   setExpenses]   = useState([]);
-  const [loading,    setLoading]    = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [needsSetup, setNeedsSetup] = useState(false);
+  const [budget,       setBudget]       = useState(null);
+  const [expenses,     setExpenses]     = useState([]);
+  const [userProfile,  setUserProfile]  = useState(null);
+  const [loading,      setLoading]      = useState(true);
+  const [refreshing,   setRefreshing]   = useState(false);
+  const [needsSetup,   setNeedsSetup]   = useState(false);
 
   const userId = auth.currentUser?.uid;
+  const currentMonth = new Date().toISOString().slice(0, 7);
 
-  const loadData = useCallback(async () => {
+  // ── Handle Android back button ──────────────────────────────────────────
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      return true;
+    });
+
+    return () => {
+      if (backHandler && typeof backHandler.remove === 'function') {
+        backHandler.remove();
+      }
+    };
+  }, []);
+
+  // ── Real-time listeners ──────────────────────────────────────────────────
+  useEffect(() => {
     if (!userId) {
       console.log('No user logged in');
       setLoading(false);
       return;
     }
-    
-    try {
-      setLoading(true);
-      console.log('Loading budget for user:', userId);
-      
-      const budgetData = await getCurrentBudget(userId);
-      
-      // If no budget exists for current month, redirect to setup wizard
-      if (!budgetData) {
-        console.log('No budget found - redirecting to setup wizard');
-        setNeedsSetup(true);
-        setLoading(false);
-        return;
-      }
-      
-      // Budget exists, load expenses
-      const expenseData = await getExpenses(userId);
-      
-      setBudget(budgetData);
-      setExpenses(expenseData || []);
-      setNeedsSetup(false);
-      console.log('Budget loaded successfully');
-    } catch (error) {
-      console.error('BudgetScreen loadData error:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, [userId]);
 
-  // Load data when screen is focused or userId changes
-  useEffect(() => {
-    if (userId && isFocused) {
-      loadData();
-    }
-  }, [loadData, userId, isFocused]);
+    console.log('Setting up real-time listeners for user:', userId);
+    setLoading(true);
+
+    const userRef = doc(db, 'users', userId);
+    const unsubscribeUser = onSnapshot(
+      userRef,
+      (docSnapshot) => {
+        if (docSnapshot.exists()) {
+          const userData = docSnapshot.data();
+          setUserProfile(userData);
+        }
+      },
+      (error) => {
+        console.error('Error listening to user profile:', error);
+      }
+    );
+
+    const budgetRef = doc(db, 'users', userId, 'budgets', currentMonth);
+    const unsubscribeBudget = onSnapshot(
+      budgetRef,
+      (docSnapshot) => {
+        if (docSnapshot.exists()) {
+          const budgetData = { id: docSnapshot.id, ...docSnapshot.data() };
+          setBudget(budgetData);
+          setNeedsSetup(false);
+          setLoading(false);
+        } else {
+          setBudget(null);
+          setNeedsSetup(true);
+          setLoading(false);
+        }
+      },
+      (error) => {
+        console.error('Error listening to budget:', error);
+        setLoading(false);
+      }
+    );
+
+    const expensesRef = collection(db, 'users', userId, 'expenses');
+    const expensesQuery = query(
+      expensesRef,
+      where('month', '==', currentMonth)
+    );
+
+    const unsubscribeExpenses = onSnapshot(
+      expensesQuery,
+      (querySnapshot) => {
+        const expenseData = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        
+        expenseData.sort((a, b) => {
+          const dateA = a.date ? new Date(a.date) : new Date(0);
+          const dateB = b.date ? new Date(b.date) : new Date(0);
+          return dateB - dateA;
+        });
+        
+        setExpenses(expenseData);
+      },
+      (error) => {
+        console.error('Error listening to expenses:', error);
+      }
+    );
+
+    return () => {
+      unsubscribeUser();
+      unsubscribeBudget();
+      unsubscribeExpenses();
+    };
+  }, [userId, currentMonth]);
 
   // Redirect to setup wizard if no budget exists
   useEffect(() => {
     if (needsSetup && !loading) {
-      navigation.navigate('BudgetSetupWizard');
+      navigation.dispatch(
+        StackActions.replace('BudgetSetupWizard')
+      );
     }
   }, [needsSetup, loading, navigation]);
 
+  // Manual refresh
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadData();
-    setRefreshing(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setTimeout(() => {
+      setRefreshing(false);
+    }, 1000);
   };
 
+  // ── Derive categories from budget data ──
   const categories = useMemo(() => {
     if (!budget?.categories) return [];
-    return BUDGET_CATEGORIES.map((cat) => ({
-      ...cat,
-      spent:    budget.categories?.[cat.id]?.spent    || 0,
-      budgeted: budget.categories?.[cat.id]?.budgeted || 0,
-    }));
+    
+    return BUDGET_CATEGORIES.map((cat) => {
+      const categoryData = budget.categories[cat.id] || {};
+      return {
+        ...cat,
+        spent: categoryData.spent || 0,
+        budgeted: categoryData.budgeted || 0,
+      };
+    }).filter(cat => cat.budgeted > 0 || cat.spent > 0);
   }, [budget]);
 
-  // Get recent expenses for the expenses list
+  // ── Derive recent expenses ──
   const recentExpenses = useMemo(() => {
-    return expenses.slice(0, 5); // Show last 5 expenses
+    return expenses.slice(0, 5);
   }, [expenses]);
 
-  const totalSpent  = budget?.spentTotal   || 0;
-  const totalBudget = budget?.totalBudget  || 0;
-  const remaining   = totalBudget - totalSpent;
-  const savingsRate = totalBudget > 0
-    ? ((remaining / totalBudget) * 100).toFixed(1)
-    : 0;
+  // ── Calculate totals ──
+  const totalIncome = userProfile?.totalIncome || 
+                      userProfile?.income || 
+                      budget?.income || 
+                      budget?.totalBudget || 
+                      0;
+  
+  const totalSpent  = budget?.spentTotal || 0;
+  const totalBudget = budget?.totalBudget || 0;
+  const remaining = totalBudget > 0 ? Math.max(0, totalBudget - totalSpent) : 0;
+  const savingsAmount = budget?.categories?.savings?.budgeted || 0;
+  
+  const expensePercentage = totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0;
+  const savingsPercentage = totalIncome > 0 ? Math.round((savingsAmount / totalIncome) * 100) : 0;
+  
+  // ── Smart budget metrics for 3D visualization ──
+  const budgetProgress = totalBudget > 0 ? Math.min(totalSpent / totalBudget, 1) : 0;
+  const savingsUrgency = totalIncome > 0 ? Math.max(0, 1 - (savingsAmount / totalIncome)) : 0;
+  
+  // Determine spending state for visual feedback
+  const spendingState = useMemo(() => {
+    if (budgetProgress >= 1) return 'critical';
+    if (budgetProgress >= 0.8) return 'warning';
+    if (budgetProgress >= 0.5) return 'moderate';
+    return 'healthy';
+  }, [budgetProgress]);
+
+  // Calculate day of month for pro-rata budget check
+  const dayProgress = useMemo(() => {
+    const now = new Date();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    return now.getDate() / daysInMonth;
+  }, []);
+
+  // Smart overspending detection (spending faster than time passing)
+  const isSpendingTooFast = budgetProgress > dayProgress && budgetProgress > 0.3;
 
   if (loading) {
     return (
@@ -265,7 +398,6 @@ export default function BudgetScreen() {
     );
   }
 
-  // If no budget exists, show setup prompt
   if (!budget) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
@@ -276,7 +408,12 @@ export default function BudgetScreen() {
         </Text>
         <Pressable
           style={styles.setupButton}
-          onPress={() => navigation.navigate('BudgetSetupWizard')}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            navigation.dispatch(
+              StackActions.replace('BudgetSetupWizard')
+            );
+          }}
         >
           <LinearGradient
             colors={['#1C1C1E', '#2C2C2E']}
@@ -294,6 +431,21 @@ export default function BudgetScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
 
+      {/* ── Scrollable Top Tab Bar ── */}
+      <ScrollableTopTabBar
+        tabs={['Budget', 'Expenses']}
+        activeTab="Budget"
+        onTabPress={(tab) => {
+          if (tab === 'Expenses') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            navigation.navigate('ExpenseDetail', {
+              categoryId: 'all',
+              categoryName: 'All Expenses',
+            });
+          }
+        }}
+      />
+
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -303,7 +455,7 @@ export default function BudgetScreen() {
             tintColor={COLORS.accent}
           />
         }
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingTop: 4 }]}
       >
         {/* ── Header ── */}
         <View style={styles.header}>
@@ -314,7 +466,6 @@ export default function BudgetScreen() {
             </Text>
           </View>
 
-          {/* + button for adding additional expenses */}
           <Pressable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -329,21 +480,102 @@ export default function BudgetScreen() {
           </Pressable>
         </View>
 
-        {/* ── Hero Ring Card ── */}
-        <View style={styles.heroCard}>
-          <BudgetRing spent={totalSpent} total={totalBudget} />
-          <Text style={styles.budgetLabel}>
-            {totalBudget > 0 
-              ? `R${totalBudget.toLocaleString('en-ZA')} monthly budget`
-              : 'No budget set'}
-          </Text>
+        {/* ── 3D Galaxy Visualization Card ── */}
+        <View style={[
+          styles.galaxyCard,
+          spendingState === 'critical' && styles.galaxyCardCritical,
+          spendingState === 'warning' && styles.galaxyCardWarning,
+        ]}>
+          <View style={[
+            styles.galaxyContainer,
+            spendingState === 'critical' && styles.galaxyContainerCritical,
+            spendingState === 'warning' && styles.galaxyContainerWarning,
+          ]}>
+            <BudgetGalaxy
+              mode="financial"
+              budgetProgress={
+                spendingState === 'critical' ? budgetProgress : 
+                spendingState === 'warning' ? budgetProgress * 0.8 : 
+                budgetProgress * 0.6
+              }
+              scholarshipUrgency={
+                spendingState === 'critical' ? savingsUrgency * 1.5 : 
+                spendingState === 'warning' ? savingsUrgency * 1.2 : 
+                savingsUrgency * 0.4
+              }
+              academicRisk={spendingState === 'critical' ? 0.8 : spendingState === 'warning' ? 0.4 : 0}
+              engagement={
+                spendingState === 'critical' ? budgetProgress * 1.2 : 
+                spendingState === 'warning' ? budgetProgress * 0.9 : 
+                budgetProgress * 0.5
+              }
+            />
+          </View>
+          
+          <View style={styles.galaxyOverlay} pointerEvents="none">
+            {spendingState !== 'healthy' && (
+              <View style={[
+                styles.alertBanner,
+                spendingState === 'critical' ? styles.alertBannerCritical : styles.alertBannerWarning
+              ]}>
+                <Ionicons 
+                  name={spendingState === 'critical' ? 'warning' : 'alert-circle'} 
+                  size={16} 
+                  color="#FFF" 
+                />
+                <Text style={styles.alertText}>
+                  {spendingState === 'critical' 
+                    ? 'Budget exceeded! Reduce spending' 
+                    : isSpendingTooFast 
+                      ? 'Spending faster than usual'
+                      : 'Approaching budget limit'}
+                </Text>
+              </View>
+            )}
+            
+            <View style={styles.galaxyStats}>
+              <Text style={[
+                styles.galaxyRemaining,
+                spendingState === 'critical' && styles.galaxyRemainingCritical,
+                spendingState === 'warning' && styles.galaxyRemainingWarning,
+              ]}>
+                {formatMoney(remaining)}
+              </Text>
+              <Text style={styles.galaxyLabel}>
+                {spendingState === 'critical' ? 'Over Budget' : 'Remaining'}
+              </Text>
+            </View>
+            
+            <View style={[
+              styles.galaxyDetails,
+              spendingState === 'critical' && styles.galaxyDetailsCritical,
+            ]}>
+              <View style={styles.galaxyDetailItem}>
+                <Text style={styles.galaxyDetailValue}>
+                  {totalBudget > 0 ? `R${totalBudget.toLocaleString('en-ZA')}` : '—'}
+                </Text>
+                <Text style={styles.galaxyDetailLabel}>Budget</Text>
+              </View>
+              <View style={styles.galaxyDivider} />
+              <View style={styles.galaxyDetailItem}>
+                <Text style={[
+                  styles.galaxyDetailValue,
+                  spendingState === 'critical' && styles.galaxyDetailValueDanger,
+                  spendingState === 'warning' && styles.galaxyDetailValueWarning,
+                ]}>
+                  {Math.round(budgetProgress * 100)}%
+                </Text>
+                <Text style={styles.galaxyDetailLabel}>Spent</Text>
+              </View>
+            </View>
+          </View>
         </View>
 
         {/* ── Summary Row ── */}
         <View style={styles.summaryRow}>
           <SummaryCard
             label="Income"
-            amount={totalBudget}
+            amount={totalIncome}
             percentage={100}
             isPositive={true}
             icon="arrow-down-circle-outline"
@@ -351,14 +583,15 @@ export default function BudgetScreen() {
           <SummaryCard
             label="Expenses"
             amount={totalSpent}
-            percentage={totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0}
+            percentage={expensePercentage}
             isPositive={false}
+            isWarning={spendingState === 'warning'}
             icon="arrow-up-circle-outline"
           />
           <SummaryCard
             label="Savings"
-            amount={remaining}
-            percentage={savingsRate}
+            amount={savingsAmount}
+            percentage={savingsPercentage}
             isPositive={true}
             icon="shield-checkmark-outline"
           />
@@ -384,7 +617,9 @@ export default function BudgetScreen() {
                     <Ionicons name={category?.icon || 'apps-outline'} size={18} color={category?.color || '#9CA3AF'} />
                   </View>
                   <View style={styles.expenseInfo}>
-                    <Text style={styles.expenseName}>{expense.note || expense.description || category?.name}</Text>
+                    <Text style={styles.expenseName}>
+                      {expense.note || expense.description || category?.name || 'Expense'}
+                    </Text>
                     <Text style={styles.expenseDate}>{expense.date}</Text>
                   </View>
                   <Text style={styles.expenseAmount}>-{formatMoney(expense.amount)}</Text>
@@ -395,27 +630,29 @@ export default function BudgetScreen() {
         )}
 
         {/* ── Categories Section ── */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Categories</Text>
-          </View>
+        {categories.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Categories</Text>
+            </View>
 
-          <View style={styles.categoriesList}>
-            {categories.map((item) => (
-              <CategoryRow
-                key={item.id}
-                item={item}
-                onPress={() => {
-                  Haptics.selectionAsync();
-                  navigation.navigate('ExpenseDetail', {
-                    categoryId:   item.id,
-                    categoryName: item.name,
-                  });
-                }}
-              />
-            ))}
+            <View style={styles.categoriesList}>
+              {categories.map((item) => (
+                <CategoryRow
+                  key={item.id}
+                  item={item}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    navigation.navigate('ExpenseDetail', {
+                      categoryId:   item.id,
+                      categoryName: item.name,
+                    });
+                  }}
+                />
+              ))}
+            </View>
           </View>
-        </View>
+        )}
 
         {/* ── CTA Banner → AI Advisor ── */}
         <Pressable
@@ -489,6 +726,7 @@ const styles = StyleSheet.create({
   setupButton: {
     borderRadius: 16,
     overflow: 'hidden',
+    marginBottom: 40,
   },
   setupButtonGradient: {
     flexDirection: 'row',
@@ -505,6 +743,7 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 20,
     paddingTop: 8,
+    paddingBottom: 4,
   },
   header: {
     flexDirection: 'row',
@@ -541,6 +780,154 @@ const styles = StyleSheet.create({
     opacity: 0.8,
     transform: [{ scale: 0.96 }],
   },
+  
+  // ── Galaxy Card Styles ──
+  galaxyCard: {
+    height: 300,
+    borderRadius: 32,
+    overflow: 'hidden',
+    marginBottom: 20,
+    backgroundColor: '#0A1520',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 4,
+    transition: 'all 0.3s ease',
+  },
+  galaxyCardCritical: {
+    backgroundColor: '#1A0A0A',
+    shadowColor: COLORS.negative,
+    shadowOpacity: 0.3,
+    shadowRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 59, 48, 0.3)',
+  },
+  galaxyCardWarning: {
+    backgroundColor: '#1A120A',
+    shadowColor: COLORS.warning,
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 149, 0, 0.2)',
+  },
+  galaxyContainer: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.6,
+  },
+  galaxyContainerCritical: {
+    opacity: 0.85,
+  },
+  galaxyContainerWarning: {
+    opacity: 0.75,
+  },
+  galaxyOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'space-between',
+    padding: 24,
+    backgroundColor: 'rgba(10, 21, 32, 0.4)',
+  },
+  
+  // ── Alert Banner ──
+  alertBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 16,
+    gap: 8,
+    alignSelf: 'center',
+  },
+  alertBannerCritical: {
+    backgroundColor: 'rgba(255, 59, 48, 0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 59, 48, 0.4)',
+  },
+  alertBannerWarning: {
+    backgroundColor: 'rgba(255, 149, 0, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 149, 0, 0.3)',
+  },
+  alertText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: -0.2,
+  },
+  
+  galaxyStats: {
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  galaxyRemaining: {
+    fontSize: 38,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -1.5,
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  galaxyRemainingCritical: {
+    color: '#FF6B6B',
+  },
+  galaxyRemainingWarning: {
+    color: '#FFB74D',
+  },
+  galaxyLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.7)',
+    textTransform: 'uppercase',
+    letterSpacing: 2,
+    marginTop: 6,
+  },
+  galaxyDetails: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  galaxyDetailsCritical: {
+    backgroundColor: 'rgba(255, 59, 48, 0.15)',
+    borderColor: 'rgba(255, 59, 48, 0.3)',
+  },
+  galaxyDetailItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  galaxyDetailValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.5,
+  },
+  galaxyDetailValueDanger: {
+    color: '#FF6B6B',
+  },
+  galaxyDetailValueWarning: {
+    color: '#FFB74D',
+  },
+  galaxyDetailLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.6)',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginTop: 4,
+  },
+  galaxyDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  
+  // ── Original Ring Styles ──
   heroCard: {
     backgroundColor: COLORS.surface,
     borderRadius: 32,
@@ -587,6 +974,8 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     marginTop: 16,
   },
+  
+  // ── Summary & Content Styles ──
   summaryRow: {
     flexDirection: 'row',
     gap: 10,
@@ -613,6 +1002,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
+  summaryIconWarning: {
+    backgroundColor: 'rgba(255, 149, 0, 0.15)',
+  },
   summaryLabel: {
     fontSize: 12,
     fontWeight: '600',
@@ -629,6 +1021,7 @@ const styles = StyleSheet.create({
   },
   positiveText: { color: COLORS.positive },
   negativeText: { color: COLORS.negative },
+  warningText: { color: COLORS.warning },
   summaryPercentage: {
     fontSize: 12,
     fontWeight: '500',
@@ -689,7 +1082,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.negative,
   },
-  categoriesList: { marginBottom: 24 },
+  categoriesList: { 
+    marginBottom: 24,
+  },
   categoryCard: {
     backgroundColor: COLORS.surface,
     borderRadius: 20,
@@ -753,12 +1148,23 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     minWidth: 36,
   },
+  progressTextDanger: {
+    color: COLORS.negative,
+    fontWeight: '700',
+  },
+  progressTextWarning: {
+    color: COLORS.warning,
+    fontWeight: '700',
+  },
   categoryAmounts: { alignItems: 'flex-end' },
   spentAmount: {
     fontSize: 18,
     fontWeight: '800',
     color: COLORS.text,
     letterSpacing: -0.3,
+  },
+  spentAmountDanger: {
+    color: COLORS.negative,
   },
   budgetedAmount: {
     fontSize: 13,
@@ -769,6 +1175,7 @@ const styles = StyleSheet.create({
   ctaBanner: {
     borderRadius: 24,
     overflow: 'hidden',
+    marginBottom: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.12,
@@ -803,5 +1210,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#8E8E93',
   },
-  bottomSpacing: { height: 40 },
+  bottomSpacing: { 
+    height: 100,
+  },
 });
