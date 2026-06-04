@@ -10,22 +10,37 @@ import {
   Dimensions,
   RefreshControl,
   Platform,
-  TextInput,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { FadeInUp } from 'react-native-reanimated';
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import {
-  Search,
-  Bookmark,
-  DollarSign,
   GraduationCap,
+  Calendar,
   Clock,
+  DollarSign,
+  MapPin,
+  Building,
+  Award,
   ChevronRight,
-  Filter,
+  Edit3,
+  CheckCircle2,
+  TrendingUp,
+  Wallet,
+  BookOpen,
 } from 'lucide-react-native';
-import { collection, getDocs, query, orderBy, where } from 'firebase/firestore';
-import { db } from '../../services/firebase';
+import { getAuth } from 'firebase/auth';
+import { 
+  fetchFundingProfile, 
+  initializeFundingFromStudent,
+  hasFundingProfile,
+  calculateAllowance,
+  calculateRemainingAllowance,
+  updateFundingProfile,
+  seedScholarships,
+  fetchAllScholarships,
+} from '../../services/scholarshipService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -47,51 +62,44 @@ const COLORS = {
   white: '#FFFFFF',
 };
 
-const STATUS_COLORS = {
-  applied: '#3B82F6',
-  saved: '#F59E0B',
-  available: '#059669',
-  closed: '#DC2626',
-};
-
-const CATEGORY_COLORS = {
-  'Healthcare': '#DC2626',
-  'Commerce': '#3B82F6',
-  'Science & Technology': '#6366F1',
-  'Arts & Humanities': '#F59E0B',
-  'General': '#059669',
-};
-
 const ScholarshipScreen = ({ navigation }) => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterCategory, setFilterCategory] = useState('all');
-  const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [scholarships, setScholarships] = useState([]);
-  const [error, setError] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [fundingProfile, setFundingProfile] = useState(null);
+  const [upcomingScholarships, setUpcomingScholarships] = useState([]);
+
+  const auth = getAuth();
+  const user = auth.currentUser;
 
   useEffect(() => {
-    loadScholarships();
+    loadData();
   }, []);
 
-  const loadScholarships = async () => {
+  const loadData = async () => {
     try {
       setLoading(true);
-      setError(null);
       
-      const scholarshipsRef = collection(db, 'scholarships');
-      const q = query(scholarshipsRef, orderBy('deadline', 'asc'));
-      const snapshot = await getDocs(q);
+      if (user) {
+        const hasProfile = await hasFundingProfile(user.uid);
+        if (!hasProfile) {
+          const initialized = await initializeFundingFromStudent(user.uid);
+          setFundingProfile(initialized);
+        } else {
+          const profile = await fetchFundingProfile(user.uid);
+          setFundingProfile(profile);
+        }
+      }
+
+      // Seed and fetch available scholarships
+      await seedScholarships();
+      const allScholarships = await fetchAllScholarships();
+      const openScholarships = allScholarships.filter(s => 
+        s.status === 'available' && new Date(s.deadline) > new Date()
+      ).slice(0, 3);
+      setUpcomingScholarships(openScholarships);
       
-      const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      
-      setScholarships(data);
-    } catch (err) {
-      console.error('[Scholarships] Load error:', err);
-      setError('Failed to load scholarships. Pull to refresh.');
+    } catch (error) {
+      console.error('[Scholarships] Load error:', error);
     } finally {
       setLoading(false);
     }
@@ -99,61 +107,37 @@ const ScholarshipScreen = ({ navigation }) => {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadScholarships();
+    await loadData();
     setRefreshing(false);
   }, []);
 
-  const getFilteredScholarships = () => {
-    let filtered = [...scholarships];
+  const handleEditStatus = () => {
+    if (!fundingProfile) return;
     
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      filtered = filtered.filter(s => 
-        (s.title || '').toLowerCase().includes(q) ||
-        (s.provider || '').toLowerCase().includes(q) ||
-        (s.category || '').toLowerCase().includes(q)
-      );
-    }
-    
-    if (filterCategory !== 'all') {
-      filtered = filtered.filter(s => s.category === filterCategory);
-    }
-    
-    return filtered;
-  };
-
-  const filteredScholarships = getFilteredScholarships();
-  const categories = [...new Set(scholarships.map(s => s.category).filter(Boolean))];
-
-  const getDaysRemaining = (deadline) => {
-    if (!deadline) return 0;
-    const now = new Date();
-    const deadlineDate = new Date(deadline);
-    return Math.ceil((deadlineDate - now) / (1000 * 60 * 60 * 24));
-  };
-
-  const formatDeadline = (deadline) => {
-    if (!deadline) return 'No deadline';
-    const days = getDaysRemaining(deadline);
-    if (days < 0) return 'Closed';
-    if (days === 0) return 'Due today';
-    if (days <= 7) return `${days} days left`;
-    return new Date(deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  };
-
-  const getDeadlineColor = (deadline) => {
-    const days = getDaysRemaining(deadline);
-    if (days < 0) return COLORS.danger;
-    if (days <= 7) return COLORS.danger;
-    if (days <= 14) return COLORS.warning;
-    return COLORS.success;
-  };
-
-  const stats = {
-    total: scholarships.length,
-    available: scholarships.filter(s => s.status === 'available').length,
-    applied: scholarships.filter(s => s.status === 'applied').length,
-    saved: scholarships.filter(s => s.status === 'saved').length,
+    Alert.alert(
+      'Student Status',
+      'Select your current status:',
+      [
+        {
+          text: 'New Student (Year 1)',
+          onPress: async () => {
+            await updateFundingProfile(user.uid, { isNewStudent: true, semester: 1 });
+            await loadData();
+          },
+        },
+        {
+          text: 'Continuing Student',
+          onPress: async () => {
+            Alert.alert('Semester', 'Which semester?', [
+              { text: 'Semester 1 (Aug-Jan)', onPress: async () => { await updateFundingProfile(user.uid, { isNewStudent: false, semester: 1 }); await loadData(); } },
+              { text: 'Semester 2 (Feb-Jul)', onPress: async () => { await updateFundingProfile(user.uid, { isNewStudent: false, semester: 2 }); await loadData(); } },
+              { text: 'Cancel', style: 'cancel' },
+            ]);
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
   };
 
   if (loading) {
@@ -164,13 +148,22 @@ const ScholarshipScreen = ({ navigation }) => {
     );
   }
 
+  const hasScholarship = fundingProfile?.hasScholarship || false;
+  const scholarshipName = fundingProfile?.scholarshipName || 'NMDS Bursary';
+  const university = fundingProfile?.university || 'Limkokwing University (LUCT)';
+  const isNewStudent = fundingProfile?.isNewStudent || false;
+  const currentSemester = fundingProfile?.semester || 1;
+  const studentNumber = fundingProfile?.studentNumber || 'N/A';
+  const fundingType = fundingProfile?.fundingType || 'NMDS';
+
+  const allowance = calculateAllowance(isNewStudent, currentSemester);
+  const remaining = calculateRemainingAllowance(allowance, 8);
+
   return (
     <LinearGradient colors={[COLORS.bgStart, COLORS.bgMid, COLORS.bgEnd]} style={styles.container}>
       <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Scholarships</Text>
-          <Text style={styles.headerSub}>{stats.available} open • {stats.applied} applied</Text>
-        </View>
+        <Text style={styles.headerTitle}>My Scholarship</Text>
+        <Text style={styles.headerSub}>{university}</Text>
       </View>
 
       <ScrollView
@@ -179,122 +172,159 @@ const ScholarshipScreen = ({ navigation }) => {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}
         contentContainerStyle={styles.scrollContent}
       >
-        {error && (
-          <View style={styles.errorBanner}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        )}
+        {/* Scholarship Status Card */}
+        <Animated.View entering={FadeInDown.delay(100)} style={styles.statusCard}>
+          <LinearGradient colors={[COLORS.success, '#047857']} style={styles.statusGradient}>
+            <View style={styles.statusContent}>
+              <View style={styles.statusIcon}>
+                <CheckCircle2 size={24} color={COLORS.white} />
+              </View>
+              <View style={styles.statusInfo}>
+                <Text style={styles.statusTitle}>{scholarshipName}</Text>
+                <Text style={styles.statusSubtitle}>Active Scholarship</Text>
+              </View>
+            </View>
+            <View style={styles.statusBadge}>
+              <Text style={styles.statusBadgeText}>{fundingType}</Text>
+            </View>
+          </LinearGradient>
+        </Animated.View>
 
-        <View style={styles.searchBox}>
-          <Search size={14} color={COLORS.textMuted} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search scholarships..."
-            placeholderTextColor={COLORS.textMuted}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-        </View>
-
-        {categories.length > 0 && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={styles.filterContent}>
-            <TouchableOpacity
-              style={[styles.filterChip, filterCategory === 'all' && styles.filterChipActive]}
-              onPress={() => setFilterCategory('all')}
-            >
-              <Text style={[styles.filterText, filterCategory === 'all' && styles.filterTextActive]}>All</Text>
+        {/* Student Info Card */}
+        <Animated.View entering={FadeInDown.delay(150)} style={styles.infoCard}>
+          <View style={styles.infoHeader}>
+            <Text style={styles.infoTitle}>Student Details</Text>
+            <TouchableOpacity onPress={handleEditStatus} style={styles.editBtn}>
+              <Edit3 size={14} color={COLORS.primary} />
+              <Text style={styles.editText}>Edit Status</Text>
             </TouchableOpacity>
-            {categories.map((cat) => (
-              <TouchableOpacity
-                key={cat}
-                style={[styles.filterChip, filterCategory === cat && styles.filterChipActive]}
-                onPress={() => setFilterCategory(filterCategory === cat ? 'all' : cat)}
+          </View>
+
+          <View style={styles.infoGrid}>
+            <View style={styles.infoItem}>
+              <Building size={16} color={COLORS.primary} />
+              <Text style={styles.infoLabel}>University</Text>
+              <Text style={styles.infoValue} numberOfLines={1}>{university}</Text>
+            </View>
+            <View style={styles.infoItem}>
+              <Award size={16} color={COLORS.warning} />
+              <Text style={styles.infoLabel}>Student ID</Text>
+              <Text style={styles.infoValue}>{studentNumber}</Text>
+            </View>
+            <View style={styles.infoItem}>
+              <GraduationCap size={16} color={COLORS.accent} />
+              <Text style={styles.infoLabel}>Status</Text>
+              <Text style={styles.infoValue}>{isNewStudent ? 'New Student' : 'Continuing'}</Text>
+            </View>
+            <View style={styles.infoItem}>
+              <Calendar size={16} color={COLORS.success} />
+              <Text style={styles.infoLabel}>Semester</Text>
+              <Text style={styles.infoValue}>Semester {currentSemester}</Text>
+            </View>
+          </View>
+        </Animated.View>
+
+        {/* Allowance Overview */}
+        <Animated.View entering={FadeInDown.delay(200)} style={styles.allowanceCard}>
+          <Text style={styles.sectionTitle}>Allowance Overview</Text>
+          
+          {/* Main Amount */}
+          <View style={styles.allowanceHero}>
+            <DollarSign size={28} color={COLORS.success} />
+            <View>
+              <Text style={styles.allowanceHeroValue}>M{allowance.monthlyStipend?.toLocaleString()}</Text>
+              <Text style={styles.allowanceHeroLabel}>Monthly Living Stipend</Text>
+            </View>
+          </View>
+
+          {/* Breakdown */}
+          <View style={styles.allowanceGrid}>
+            <View style={styles.allowanceItem}>
+              <Text style={styles.allowanceItemValue}>M{allowance.semesterStipend?.toLocaleString()}</Text>
+              <Text style={styles.allowanceItemLabel}>Per Semester</Text>
+            </View>
+            <View style={styles.allowanceItem}>
+              <Text style={styles.allowanceItemValue}>M{allowance.lumpSum > 0 ? allowance.lumpSum?.toLocaleString() : '0'}</Text>
+              <Text style={styles.allowanceItemLabel}>Lump Sum</Text>
+            </View>
+            <View style={styles.allowanceItem}>
+              <Text style={styles.allowanceItemValue}>M{allowance.annualTotal?.toLocaleString()}</Text>
+              <Text style={styles.allowanceItemLabel}>Annual Total</Text>
+            </View>
+          </View>
+        </Animated.View>
+
+        {/* Semester Progress */}
+        <Animated.View entering={FadeInDown.delay(250)} style={styles.progressCard}>
+          <Text style={styles.sectionTitle}>Semester Progress</Text>
+          
+          {/* Progress Bar */}
+          <View style={styles.progressBarContainer}>
+            <View style={styles.progressBar}>
+              <View style={[styles.progressFill, { width: `${(remaining.monthsElapsed / 6) * 100}%` }]} />
+            </View>
+            <View style={styles.progressLabels}>
+              <Text style={styles.progressLabel}>Month {remaining.monthsElapsed}/6</Text>
+              <Text style={styles.progressPercent}>{Math.round((remaining.monthsElapsed / 6) * 100)}%</Text>
+            </View>
+          </View>
+
+          {/* Stats */}
+          <View style={styles.progressGrid}>
+            <View style={styles.progressItem}>
+              <Clock size={18} color={COLORS.warning} />
+              <Text style={styles.progressItemValue}>{remaining.monthsElapsed}</Text>
+              <Text style={styles.progressItemLabel}>Months Elapsed</Text>
+            </View>
+            <View style={styles.progressItem}>
+              <TrendingUp size={18} color={COLORS.primary} />
+              <Text style={styles.progressItemValue}>{remaining.monthsRemaining}</Text>
+              <Text style={styles.progressItemLabel}>Months Remaining</Text>
+            </View>
+            <View style={styles.progressItem}>
+              <DollarSign size={18} color={COLORS.success} />
+              <Text style={styles.progressItemValue}>M{remaining.remainingStipend?.toLocaleString()}</Text>
+              <Text style={styles.progressItemLabel}>Stipend Remaining</Text>
+            </View>
+          </View>
+        </Animated.View>
+
+        {/* Other Available Scholarships */}
+        {upcomingScholarships.length > 0 && (
+          <Animated.View entering={FadeInDown.delay(300)} style={styles.otherCard}>
+            <View style={styles.otherHeader}>
+              <BookOpen size={16} color={COLORS.primary} />
+              <Text style={styles.sectionTitle}>Other Opportunities</Text>
+            </View>
+            {upcomingScholarships.map((s, i) => (
+              <TouchableOpacity 
+                key={s.id} 
+                style={[styles.otherItem, i < upcomingScholarships.length - 1 && styles.otherBorder]}
+                onPress={() => navigation.navigate('ScholarshipDetails', { scholarship: s })}
               >
-                <View style={[styles.filterDot, { backgroundColor: CATEGORY_COLORS[cat] || COLORS.primary }]} />
-                <Text style={[styles.filterText, filterCategory === cat && styles.filterTextActive]}>{cat}</Text>
+                <View style={styles.otherInfo}>
+                  <Text style={styles.otherName} numberOfLines={1}>{s.title}</Text>
+                  <Text style={styles.otherProvider}>{s.provider}</Text>
+                  <Text style={styles.otherAmount}>{s.amount}</Text>
+                </View>
+                <ChevronRight size={16} color={COLORS.textMuted} />
               </TouchableOpacity>
             ))}
-          </ScrollView>
+          </Animated.View>
         )}
 
-        <TouchableOpacity
-          style={styles.quickLinkCard}
+        {/* Full Allowance Detail Button */}
+        <TouchableOpacity 
+          style={styles.detailBtn}
           onPress={() => navigation.navigate('FundingTracker')}
-          activeOpacity={0.7}
+          activeOpacity={0.8}
         >
-          <DollarSign size={20} color={COLORS.success} />
-          <Text style={styles.quickLinkLabel}>Funding Tracker</Text>
-          <ChevronRight size={14} color={COLORS.textMuted} />
+          <LinearGradient colors={[COLORS.primary, COLORS.primaryDark]} style={styles.detailGrad}>
+            <Wallet size={18} color={COLORS.white} />
+            <Text style={styles.detailText}>View Full Allowance Details</Text>
+            <ChevronRight size={16} color={COLORS.white} />
+          </LinearGradient>
         </TouchableOpacity>
-
-        {filteredScholarships.length === 0 ? (
-          <View style={styles.emptyState}>
-            <GraduationCap size={48} color={COLORS.textMuted} />
-            <Text style={styles.emptyTitle}>No scholarships found</Text>
-          </View>
-        ) : (
-          filteredScholarships.map((scholarship, index) => {
-            const deadlineColor = getDeadlineColor(scholarship.deadline);
-
-            return (
-              <Animated.View key={scholarship.id} entering={FadeInUp.delay(index * 100)}>
-                <TouchableOpacity
-                  style={styles.card}
-                  onPress={() => navigation.navigate('ScholarshipDetails', { scholarship })}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.cardTop}>
-                    <View style={styles.cardTopLeft}>
-                      {scholarship.category && (
-                        <View style={[styles.categoryBadge, { backgroundColor: (CATEGORY_COLORS[scholarship.category] || COLORS.primary) + '15' }]}>
-                          <Text style={[styles.categoryText, { color: CATEGORY_COLORS[scholarship.category] || COLORS.primary }]}>
-                            {scholarship.category}
-                          </Text>
-                        </View>
-                      )}
-                      {scholarship.status && (
-                        <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[scholarship.status] + '15' }]}>
-                          <Text style={[styles.statusText, { color: STATUS_COLORS[scholarship.status] }]}>
-                            {scholarship.status}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                    <Bookmark size={18} color={scholarship.status === 'saved' ? COLORS.warning : COLORS.textMuted} fill={scholarship.status === 'saved' ? COLORS.warning : 'transparent'} />
-                  </View>
-
-                  <Text style={styles.cardTitle}>{scholarship.title || 'Untitled'}</Text>
-                  <Text style={styles.cardProvider}>{scholarship.provider || 'Unknown provider'}</Text>
-
-                  {scholarship.amount && (
-                    <View style={styles.amountRow}>
-                      <DollarSign size={14} color={COLORS.success} />
-                      <Text style={styles.amountText}>{scholarship.amount}</Text>
-                    </View>
-                  )}
-
-                  {scholarship.description && (
-                    <Text style={styles.cardDescription} numberOfLines={2}>{scholarship.description}</Text>
-                  )}
-
-                  {scholarship.tags && scholarship.tags.length > 0 && (
-                    <View style={styles.tagsRow}>
-                      {scholarship.tags.map((tag, i) => (
-                        <View key={i} style={styles.tag}><Text style={styles.tagText}>{tag}</Text></View>
-                      ))}
-                    </View>
-                  )}
-
-                  <View style={styles.deadlineRow}>
-                    <Clock size={12} color={deadlineColor} />
-                    <Text style={[styles.deadlineText, { color: deadlineColor }]}>{formatDeadline(scholarship.deadline)}</Text>
-                    <ChevronRight size={14} color={COLORS.textMuted} style={{ marginLeft: 'auto' }} />
-                  </View>
-                </TouchableOpacity>
-              </Animated.View>
-            );
-          })
-        )}
 
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -310,50 +340,69 @@ const styles = StyleSheet.create({
   headerSub: { fontSize: 13, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textSecondary, marginTop: 3 },
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingTop: 4 },
-  errorBanner: { backgroundColor: COLORS.danger + '10', borderRadius: 12, padding: 12, marginBottom: 12 },
-  errorText: { fontSize: 13, fontFamily: 'JosefinSans-SemiBold', color: COLORS.danger, textAlign: 'center' },
-  searchBox: {
-    flexDirection: 'row', alignItems: 'center', gap: 8, height: 42, borderRadius: 14,
-    backgroundColor: COLORS.surface, paddingHorizontal: 14, marginBottom: 12,
-  },
-  searchInput: { flex: 1, fontSize: 13, fontFamily: 'JosefinSans-SemiBold', color: COLORS.text },
-  filterRow: { marginBottom: 14 },
-  filterContent: { gap: 8 },
-  filterChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 7,
-    borderRadius: 18, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.surfaceAlt,
-  },
-  filterChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  filterDot: { width: 6, height: 6, borderRadius: 3 },
-  filterText: { fontSize: 12, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textSecondary },
-  filterTextActive: { color: COLORS.white, fontFamily: 'JosefinSans-Bold' },
-  quickLinkCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: COLORS.surface,
-    borderRadius: 16, padding: 16, marginBottom: 14,
-  },
-  quickLinkLabel: { flex: 1, fontSize: 14, fontFamily: 'JosefinSans-Bold', color: COLORS.text },
-  emptyState: { alignItems: 'center', paddingTop: 60 },
-  emptyTitle: { fontSize: 16, fontFamily: 'JosefinSans-Bold', color: COLORS.text, marginTop: 16 },
-  card: {
-    backgroundColor: COLORS.surface, borderRadius: 20, padding: 18, marginBottom: 14,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 12, elevation: 2,
-  },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
-  cardTopLeft: { flexDirection: 'row', gap: 6 },
-  categoryBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  categoryText: { fontSize: 10, fontFamily: 'JosefinSans-Bold' },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  statusText: { fontSize: 10, fontFamily: 'JosefinSans-Bold' },
-  cardTitle: { fontSize: 17, fontFamily: 'JosefinSans-Bold', color: COLORS.text, marginBottom: 4 },
-  cardProvider: { fontSize: 13, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textMuted, marginBottom: 8 },
-  amountRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
-  amountText: { fontSize: 15, fontFamily: 'JosefinSans-Bold', color: COLORS.success },
-  cardDescription: { fontSize: 13, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textSecondary, lineHeight: 18, marginBottom: 10 },
-  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
-  tag: { backgroundColor: COLORS.surfaceAlt, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  tagText: { fontSize: 10, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textMuted },
-  deadlineRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  deadlineText: { fontSize: 12, fontFamily: 'JosefinSans-Bold' },
+
+  // Status Card
+  statusCard: { borderRadius: 20, overflow: 'hidden', marginBottom: 14, shadowColor: COLORS.success, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 4 },
+  statusGradient: { padding: 18 },
+  statusContent: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
+  statusIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
+  statusInfo: { flex: 1 },
+  statusTitle: { fontSize: 18, fontFamily: 'JosefinSans-Bold', color: COLORS.white },
+  statusSubtitle: { fontSize: 12, fontFamily: 'JosefinSans-SemiBold', color: 'rgba(255,255,255,0.8)', marginTop: 2 },
+  statusBadge: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 8, alignSelf: 'flex-start' },
+  statusBadgeText: { fontSize: 11, fontFamily: 'JosefinSans-Bold', color: COLORS.white },
+
+  // Info Card
+  infoCard: { backgroundColor: COLORS.surface, borderRadius: 20, padding: 18, marginBottom: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 12, elevation: 2 },
+  infoHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  infoTitle: { fontSize: 16, fontFamily: 'JosefinSans-Bold', color: COLORS.text },
+  editBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.surfaceAlt, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  editText: { fontSize: 11, fontFamily: 'JosefinSans-Bold', color: COLORS.primary },
+  infoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  infoItem: { width: '47%', backgroundColor: COLORS.surfaceAlt, borderRadius: 14, padding: 14, alignItems: 'center', gap: 4 },
+  infoLabel: { fontSize: 10, fontFamily: 'JosefinSans-Bold', color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+  infoValue: { fontSize: 14, fontFamily: 'JosefinSans-Bold', color: COLORS.text, textAlign: 'center' },
+
+  // Section Title
+  sectionTitle: { fontSize: 16, fontFamily: 'JosefinSans-Bold', color: COLORS.text, marginBottom: 14 },
+
+  // Allowance
+  allowanceCard: { backgroundColor: COLORS.surface, borderRadius: 20, padding: 18, marginBottom: 14 },
+  allowanceHero: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: COLORS.success + '10', borderRadius: 16, padding: 16, marginBottom: 14 },
+  allowanceHeroValue: { fontSize: 24, fontFamily: 'JosefinSans-Bold', color: COLORS.text },
+  allowanceHeroLabel: { fontSize: 12, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textMuted, marginTop: 2 },
+  allowanceGrid: { flexDirection: 'row', gap: 8 },
+  allowanceItem: { flex: 1, backgroundColor: COLORS.surfaceAlt, borderRadius: 12, padding: 12, alignItems: 'center', gap: 2 },
+  allowanceItemValue: { fontSize: 14, fontFamily: 'JosefinSans-Bold', color: COLORS.text },
+  allowanceItemLabel: { fontSize: 10, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: 0.3 },
+
+  // Progress
+  progressCard: { backgroundColor: COLORS.surface, borderRadius: 20, padding: 18, marginBottom: 14 },
+  progressBarContainer: { marginBottom: 16 },
+  progressBar: { height: 10, backgroundColor: COLORS.surfaceAlt, borderRadius: 5, overflow: 'hidden', marginBottom: 8 },
+  progressFill: { height: '100%', borderRadius: 5, backgroundColor: COLORS.primary },
+  progressLabels: { flexDirection: 'row', justifyContent: 'space-between' },
+  progressLabel: { fontSize: 12, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textSecondary },
+  progressPercent: { fontSize: 12, fontFamily: 'JosefinSans-Bold', color: COLORS.primary },
+  progressGrid: { flexDirection: 'row', gap: 8 },
+  progressItem: { flex: 1, backgroundColor: COLORS.surfaceAlt, borderRadius: 12, padding: 12, alignItems: 'center', gap: 4 },
+  progressItemValue: { fontSize: 16, fontFamily: 'JosefinSans-Bold', color: COLORS.text },
+  progressItemLabel: { fontSize: 10, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: 0.3 },
+
+  // Other Scholarships
+  otherCard: { backgroundColor: COLORS.surface, borderRadius: 20, padding: 18, marginBottom: 14 },
+  otherHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
+  otherItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
+  otherBorder: { borderBottomWidth: 1, borderBottomColor: COLORS.surfaceAlt },
+  otherInfo: { flex: 1 },
+  otherName: { fontSize: 13, fontFamily: 'JosefinSans-Bold', color: COLORS.text, marginBottom: 2 },
+  otherProvider: { fontSize: 11, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textMuted, marginBottom: 2 },
+  otherAmount: { fontSize: 12, fontFamily: 'JosefinSans-Bold', color: COLORS.success },
+
+  // Detail Button
+  detailBtn: { borderRadius: 16, overflow: 'hidden', marginBottom: 14, shadowColor: COLORS.primaryDark, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 4 },
+  detailGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 16 },
+  detailText: { fontSize: 15, fontFamily: 'JosefinSans-Bold', color: COLORS.white },
 });
 
 export default ScholarshipScreen;

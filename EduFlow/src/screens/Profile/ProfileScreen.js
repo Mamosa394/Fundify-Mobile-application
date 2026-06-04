@@ -284,7 +284,7 @@ const ProfileScreen = ({ navigation }) => {
           <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
 
-        <View style={{ height: 40 }}>
+        <View style={{ height: 40, marginBottom: 50 }}>
           <Text style={styles.versionText}>EduFlow v1.0</Text>
         </View>
       </ScrollView>
@@ -317,7 +317,7 @@ const styles = StyleSheet.create({
   menuBorder: { borderBottomWidth: 1, borderBottomColor: COLORS.surfaceAlt },
   menuIcon: { width: 36, height: 36, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   menuLabel: { flex: 1, fontSize: 14, fontFamily: 'JosefinSans-SemiBold', color: COLORS.text },
-  logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: COLORS.surface, paddingVertical: 16, borderRadius: 20, marginBottom: 16 },
+  logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: COLORS.surface, paddingVertical: 16, borderRadius: 20, marginBottom: 20 },
   logoutText: { fontSize: 15, fontFamily: 'JosefinSans-Bold', color: COLORS.danger },
   versionText: { textAlign: 'center', fontSize: 12, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textMuted },
 });

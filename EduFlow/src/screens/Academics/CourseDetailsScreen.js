@@ -2,30 +2,17 @@
 
 import React, { useState, useEffect, useRef, Suspense } from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  StyleSheet,
-  Dimensions,
-  Platform,
-  Alert,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions,
+  Platform, Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Canvas, useFrame } from '@react-three/fiber/native';
 import { useGLTF } from '@react-three/drei/native';
 import { useIsFocused } from '@react-navigation/native';
 import { BlurView } from 'expo-blur';
-import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeInUp } from 'react-native-reanimated';
 import {
-  Plus,
-  Edit3,
-  Trash2,
-  BookOpen,
-  Calendar,
-  GraduationCap,
-  Layers,
-  ClipboardList,
+  Plus, Edit3, Trash2, BookOpen, Calendar, Layers, ClipboardList, Award, FileText, Target,ChevronRight,
 } from 'lucide-react-native';
 import useAcademicStore from '../../store/academicStore';
 import ModuleModal from './components/ModuleModal';
@@ -34,22 +21,12 @@ import AssessmentModal from './components/AssessmentModal';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const COLORS = {
-  bgStart: '#F8FAFC',
-  bgMid: '#E2E8F0',
-  bgEnd: '#CBD5E1',
-  surface: '#FFFFFF',
-  surfaceAlt: '#F1F5F9',
-  primary: '#475569',
-  primaryDark: '#334155',
-  text: '#0F172A',
-  textSecondary: '#64748B',
-  textMuted: '#94A3B8',
-  success: '#059669',
-  warning: '#D97706',
-  danger: '#DC2626',
-  accent: '#6366F1',
-  white: '#FFFFFF',
-  slate: '#1e293b',
+  bgStart: '#F8FAFC', bgMid: '#E2E8F0', bgEnd: '#CBD5E1',
+  surface: '#FFFFFF', surfaceAlt: '#F1F5F9',
+  primary: '#475569', primaryDark: '#334155',
+  text: '#0F172A', textSecondary: '#64748B', textMuted: '#94A3B8',
+  success: '#059669', warning: '#D97706', danger: '#DC2626',
+  accent: '#6366F1', white: '#FFFFFF', slate: '#1e293b',
 };
 
 const GRADE_COLORS = {
@@ -57,16 +34,12 @@ const GRADE_COLORS = {
   'B+': '#2563EB', 'B': '#2563EB', 'B-': '#3B82F6',
   'C+': '#D97706', 'C': '#D97706', 'C-': '#F59E0B',
   'D+': '#DC2626', 'D': '#DC2626', 'D-': '#EF4444',
-  'F': '#DC2626',
+  'PP': '#DC2626', 'F': '#DC2626',
 };
 
-// ============================================================
-// 3D BOOK MODEL
-// ============================================================
 function BookModel() {
   const groupRef = useRef();
   const { scene } = useGLTF(require('./models/Book.glb'));
-
   useFrame((state) => {
     const t = state.clock.getElapsedTime();
     if (groupRef.current) {
@@ -74,7 +47,6 @@ function BookModel() {
       groupRef.current.position.y = Math.sin(t * 0.5) * 0.1;
     }
   });
-
   return (
     <>
       <ambientLight intensity={3.0} />
@@ -88,10 +60,7 @@ function BookModel() {
   );
 }
 
-// ============================================================
-// MAIN SCREEN
-// ============================================================
-const CourseDetailsScreen = () => {
+const CourseDetailsScreen = ({ navigation }) => {
   const [selectedModule, setSelectedModule] = useState(null);
   const [showModuleModal, setShowModuleModal] = useState(false);
   const [showAssessmentModal, setShowAssessmentModal] = useState(false);
@@ -108,9 +77,16 @@ const CourseDetailsScreen = () => {
 
   const getGradeColor = (grade) => GRADE_COLORS[grade] || COLORS.textMuted;
 
-  // Calculate totals
   const totalExams = modules.reduce((sum, m) => sum + (m.assessments || []).length, 0);
   const totalTasks = modules.reduce((sum, m) => sum + (m.assignments || []).length, 0);
+
+  const getModuleAssessmentSummary = (mod) => {
+    const assessments = mod.assessments || [];
+    const completed = assessments.filter(a => a.gradeObtained && a.gradeObtained !== 'PP');
+    const supplementary = assessments.filter(a => a.gradeObtained === 'PP');
+    const pending = assessments.filter(a => !a.gradeObtained);
+    return { total: assessments.length, completed: completed.length, supplementary: supplementary.length, pending: pending.length };
+  };
 
   if (modules.length === 0) {
     return (
@@ -119,9 +95,7 @@ const CourseDetailsScreen = () => {
           <View style={styles.emptyCanvas}>
             {isFocused && (
               <Canvas dpr={1} gl={{ antialias: true, alpha: true }} camera={{ position: [0, 0, 3], fov: 55 }} style={{ flex: 1 }}>
-                <Suspense fallback={null}>
-                  <BookModel />
-                </Suspense>
+                <Suspense fallback={null}><BookModel /></Suspense>
               </Canvas>
             )}
           </View>
@@ -142,7 +116,6 @@ const CourseDetailsScreen = () => {
 
   return (
     <LinearGradient colors={[COLORS.bgStart, COLORS.bgMid, COLORS.bgEnd]} style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>Courses</Text>
@@ -160,12 +133,9 @@ const CourseDetailsScreen = () => {
         <View style={styles.canvasContainer}>
           {isFocused && (
             <Canvas dpr={1} gl={{ antialias: true, alpha: true }} camera={{ position: [0, 0, 3], fov: 55 }} style={{ flex: 1 }}>
-              <Suspense fallback={null}>
-                <BookModel />
-              </Suspense>
+              <Suspense fallback={null}><BookModel /></Suspense>
             </Canvas>
           )}
-          {/* Stats overlay on the 3D model */}
           <BlurView intensity={25} tint="dark" style={styles.canvasOverlay}>
             <View style={styles.overlayStat}>
               <Layers size={14} color={COLORS.white} />
@@ -187,12 +157,24 @@ const CourseDetailsScreen = () => {
           </BlurView>
         </View>
 
+        {/* Grade Report Button */}
+        <TouchableOpacity style={styles.reportBtn} onPress={() => navigation.navigate('ModuleGradesTable')} activeOpacity={0.7}>
+          <View style={styles.reportIcon}>
+            <Award size={18} color={COLORS.primary} />
+          </View>
+          <View style={styles.reportContent}>
+            <Text style={styles.reportTitle}>View Grade Report</Text>
+            <Text style={styles.reportSub}>Full assessment breakdown with marks and grades</Text>
+          </View>
+          <ChevronRight size={16} color={COLORS.textMuted} />
+        </TouchableOpacity>
+
         {/* Module Cards */}
         {modules.map((module, index) => {
           const done = (module.assignments || []).filter(a => a.status === 'completed').length;
           const total = (module.assignments || []).length;
           const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-          const assessments = (module.assessments || []).length;
+          const summary = getModuleAssessmentSummary(module);
 
           return (
             <Animated.View key={module.id} entering={FadeInUp.delay(index * 80)} style={styles.card}>
@@ -214,7 +196,7 @@ const CourseDetailsScreen = () => {
                   { value: module.credits, label: 'credits' },
                   { value: total, label: 'tasks' },
                   { value: `${pct}%`, label: 'done', color: pct >= 80 ? COLORS.success : pct >= 40 ? COLORS.warning : COLORS.danger },
-                  { value: assessments, label: 'exams' },
+                  { value: summary.total, label: 'exams' },
                 ].map((stat, i) => (
                   <React.Fragment key={i}>
                     <View style={styles.statItem}>
@@ -225,6 +207,26 @@ const CourseDetailsScreen = () => {
                   </React.Fragment>
                 ))}
               </View>
+
+              {/* Assessment Status */}
+              {summary.total > 0 && (
+                <View style={styles.assessmentStatus}>
+                  <View style={[styles.statusDot, { backgroundColor: COLORS.success }]} />
+                  <Text style={styles.statusText}>{summary.completed} passed</Text>
+                  {summary.supplementary > 0 && (
+                    <>
+                      <View style={[styles.statusDot, { backgroundColor: COLORS.danger }]} />
+                      <Text style={[styles.statusText, { color: COLORS.danger }]}>{summary.supplementary} supp</Text>
+                    </>
+                  )}
+                  {summary.pending > 0 && (
+                    <>
+                      <View style={[styles.statusDot, { backgroundColor: COLORS.textMuted }]} />
+                      <Text style={styles.statusText}>{summary.pending} pending</Text>
+                    </>
+                  )}
+                </View>
+              )}
 
               <View style={styles.progressTrack}>
                 <View style={[styles.progressFill, { width: `${pct}%`, backgroundColor: module.color }]} />
@@ -262,9 +264,6 @@ const CourseDetailsScreen = () => {
   );
 };
 
-// ============================================================
-// STYLES
-// ============================================================
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 54 : 36, paddingBottom: 16 },
@@ -274,7 +273,6 @@ const styles = StyleSheet.create({
   addBtnGrad: { width: 42, height: 42, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingTop: 4 },
-
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
   emptyCanvas: { width: 180, height: 180, marginBottom: 16 },
   emptyTitle: { fontSize: 24, fontFamily: 'JosefinSans-Bold', color: COLORS.text, marginBottom: 8 },
@@ -282,96 +280,38 @@ const styles = StyleSheet.create({
   emptyBtn: { borderRadius: 16, overflow: 'hidden', shadowColor: COLORS.primaryDark, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.25, shadowRadius: 12, elevation: 6 },
   emptyBtnGrad: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 28, paddingVertical: 16 },
   emptyBtnText: { fontSize: 16, fontFamily: 'JosefinSans-Bold', color: COLORS.white },
+  canvasContainer: { height: 180, borderRadius: 24, overflow: 'hidden', marginBottom: 16, backgroundColor: COLORS.slate, position: 'relative' },
+  canvasOverlay: { position: 'absolute', bottom: 12, left: 12, right: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingVertical: 10, paddingHorizontal: 8, borderRadius: 14, overflow: 'hidden', backgroundColor: 'rgba(0,0,0,0.35)' },
+  overlayStat: { flex: 1, alignItems: 'center', gap: 2 },
+  overlayStatValue: { fontSize: 16, fontFamily: 'JosefinSans-Bold', color: COLORS.white },
+  overlayStatLabel: { fontSize: 9, fontFamily: 'JosefinSans-SemiBold', color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: 0.5 },
+  overlayDivider: { width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.15)' },
 
-  // 3D Canvas with overlay
-  canvasContainer: { 
-    height: 180, 
-    borderRadius: 24, 
-    overflow: 'hidden', 
-    marginBottom: 16,
-    backgroundColor: COLORS.slate,
-    position: 'relative',
-  },
-  canvasOverlay: {
-    position: 'absolute',
-    bottom: 12,
-    left: 12,
-    right: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 14,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  overlayStat: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 2,
-  },
-  overlayStatValue: {
-    fontSize: 16,
-    fontFamily: 'JosefinSans-Bold',
-    color: COLORS.white,
-  },
-  overlayStatLabel: {
-    fontSize: 9,
-    fontFamily: 'JosefinSans-SemiBold',
-    color: 'rgba(255,255,255,0.7)',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  overlayDivider: {
-    width: 1,
-    height: 28,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-  },
+  // Report Button
+  reportBtn: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: COLORS.surface, borderRadius: 16, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: COLORS.primary + '20' },
+  reportIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: COLORS.primary + '10', justifyContent: 'center', alignItems: 'center' },
+  reportContent: { flex: 1 },
+  reportTitle: { fontSize: 14, fontFamily: 'JosefinSans-Bold', color: COLORS.text },
+  reportSub: { fontSize: 11, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textMuted, marginTop: 1 },
 
-  // Cards
-  card: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 2,
-  },
-  cardIdentity: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    marginBottom: 18,
-  },
-  cardBadge: {
-    width: 48,
-    height: 48,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  card: { backgroundColor: COLORS.surface, borderRadius: 24, padding: 20, marginBottom: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 12, elevation: 2 },
+  cardIdentity: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 18 },
+  cardBadge: { width: 48, height: 48, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
   cardIdentityText: { flex: 1 },
   moduleName: { fontSize: 17, fontFamily: 'JosefinSans-Bold', color: COLORS.text, marginBottom: 3 },
   moduleCode: { fontSize: 12, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textMuted },
   gradeIndicator: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
   gradeIndicatorText: { fontSize: 15, fontFamily: 'JosefinSans-Bold', color: COLORS.white },
-
-  // Stats
-  statsInline: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surfaceAlt, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 8, marginBottom: 16 },
+  statsInline: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surfaceAlt, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 8, marginBottom: 12 },
   statItem: { flex: 1, alignItems: 'center' },
   statNumber: { fontSize: 18, fontFamily: 'JosefinSans-Bold', color: COLORS.text, marginBottom: 2 },
   statUnit: { fontSize: 10, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
   statDivider: { width: 1, height: 28, backgroundColor: COLORS.bgMid },
-
-  // Progress
+  assessmentStatus: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusText: { fontSize: 11, fontFamily: 'JosefinSans-SemiBold', color: COLORS.textSecondary },
   progressTrack: { height: 6, backgroundColor: COLORS.bgMid, borderRadius: 3, overflow: 'hidden', marginBottom: 16 },
   progressFill: { height: '100%', borderRadius: 3 },
-
-  // Actions
   actionRow: { flexDirection: 'row', gap: 8 },
   actionChip: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 9, borderRadius: 12, backgroundColor: COLORS.surfaceAlt },
   actionChipText: { fontSize: 11, fontFamily: 'JosefinSans-Bold', color: COLORS.primary },
