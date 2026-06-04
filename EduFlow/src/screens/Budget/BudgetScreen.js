@@ -64,8 +64,8 @@ const COLORS = {
 const formatMoney = (amount) =>
   `M${Number(amount || 0).toLocaleString('en-ZA')}`;
 
-// ─── SmartBotIcon ─────────────────────────────────────────────────────────────
-function SmartBotIcon({ onPress, hasInsights }) {
+// AI Advisor Button Component
+function AIAdvisorButton({ onPress, hasInsights }) {
   const [isPressed, setIsPressed] = useState(false);
 
   return (
@@ -74,9 +74,9 @@ function SmartBotIcon({ onPress, hasInsights }) {
       onPressIn={() => setIsPressed(true)}
       onPressOut={() => setIsPressed(false)}
       style={({ pressed }) => [
-        styles.botButton,
-        pressed && styles.botButtonPressed,
-        isPressed && styles.botButtonActive,
+        styles.aiButton,
+        pressed && styles.aiButtonPressed,
+        isPressed && styles.aiButtonActive,
       ]}
     >
       <LinearGradient
@@ -84,25 +84,56 @@ function SmartBotIcon({ onPress, hasInsights }) {
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[
-          styles.botGradient,
-          isPressed && styles.botGradientActive,
+          styles.aiButtonGradient,
+          isPressed && styles.aiButtonGradientActive,
         ]}
       >
-        <View style={styles.botIconContainer}>
+        <View style={styles.aiIconContainer}>
           <Ionicons name="chatbubble-ellipses" size={20} color="#FFF" />
-          <View style={styles.botPulseRing} />
           {hasInsights && (
-            <View style={styles.botNotificationDot}>
-              <View style={styles.botNotificationInner} />
+            <View style={styles.aiNotificationDot}>
+              <View style={styles.aiNotificationInner} />
             </View>
           )}
         </View>
+        <Text style={styles.aiButtonText}>AI Advisor</Text>
       </LinearGradient>
     </Pressable>
   );
 }
 
-// ─── BudgetRing (Kept as fallback) ────────────────────────────────────────────
+// Add Expense Button Component
+function AddExpenseButton({ onPress }) {
+  const [isPressed, setIsPressed] = useState(false);
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={() => setIsPressed(true)}
+      onPressOut={() => setIsPressed(false)}
+      style={({ pressed }) => [
+        styles.addExpenseButton,
+        pressed && styles.addExpenseButtonPressed,
+        isPressed && styles.addExpenseButtonActive,
+      ]}
+    >
+      <LinearGradient
+        colors={['#1C1C1E', '#2C2C2E']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[
+          styles.addExpenseGradient,
+          isPressed && styles.addExpenseGradientActive,
+        ]}
+      >
+        <Ionicons name="add-circle-outline" size={20} color="#FFF" />
+        <Text style={styles.addExpenseButtonText}>Add Expense</Text>
+      </LinearGradient>
+    </Pressable>
+  );
+}
+
+// BudgetRing (Kept as fallback)
 function BudgetRing({ spent = 0, total = 1 }) {
   const size          = 180;
   const strokeWidth   = 14;
@@ -155,7 +186,7 @@ function BudgetRing({ spent = 0, total = 1 }) {
   );
 }
 
-// ─── CategoryRow ──────────────────────────────────────────────────────────────
+// CategoryRow
 function CategoryRow({ item, onPress }) {
   const progress    = Math.min(item.budgeted > 0 ? item.spent / item.budgeted : 0, 1);
   const isOverBudget = progress >= 1;
@@ -219,7 +250,7 @@ function CategoryRow({ item, onPress }) {
   );
 }
 
-// ─── SummaryCard ──────────────────────────────────────────────────────────────
+// SummaryCard
 function SummaryCard({ label, amount, percentage, isPositive, icon, isWarning }) {
   return (
     <View style={styles.summaryCard}>
@@ -245,7 +276,7 @@ function SummaryCard({ label, amount, percentage, isPositive, icon, isWarning })
   );
 }
 
-// ─── BudgetScreen ─────────────────────────────────────────────────────────────
+// Main BudgetScreen
 export default function BudgetScreen() {
   const navigation = useNavigation();
   const isFocused = useIsFocused();
@@ -261,7 +292,7 @@ export default function BudgetScreen() {
   const userId = auth.currentUser?.uid;
   const currentMonth = new Date().toISOString().slice(0, 7);
 
-  // ── Handle Android back button ──────────────────────────────────────────
+  // Handle Android back button
   useEffect(() => {
     if (Platform.OS !== 'android') return;
 
@@ -276,7 +307,7 @@ export default function BudgetScreen() {
     };
   }, []);
 
-  // ── Real-time listeners ──────────────────────────────────────────────────
+  // Real-time listeners
   useEffect(() => {
     if (!userId) {
       console.log('No user logged in');
@@ -356,12 +387,12 @@ export default function BudgetScreen() {
     };
   }, [userId, currentMonth]);
 
-  // Redirect to setup wizard if no budget exists - FIXED
- useEffect(() => {
-  if (needsSetup && !loading && !deleting) {
-    navigation.navigate('BudgetSetupWizard');
-  }
-}, [needsSetup, loading, deleting, navigation]);
+  // Redirect to setup wizard if no budget exists
+  useEffect(() => {
+    if (needsSetup && !loading && !deleting) {
+      navigation.navigate('BudgetSetupWizard');
+    }
+  }, [needsSetup, loading, deleting, navigation]);
 
   // Manual refresh
   const onRefresh = async () => {
@@ -372,7 +403,7 @@ export default function BudgetScreen() {
     }, 1000);
   };
 
-  // ── Delete Budget Function ──────────────────────────────────────────────
+  // Delete Budget Function
   const handleDeleteBudget = useCallback(() => {
     Alert.alert(
       'Delete Budget',
@@ -392,50 +423,47 @@ export default function BudgetScreen() {
     );
   }, [userId, currentMonth]);
 
-const deleteCurrentBudget = async () => {
-  if (!userId) return;
+  const deleteCurrentBudget = async () => {
+    if (!userId) return;
 
-  setDeleting(true);
-  try {
-    const batch = writeBatch(db);
+    setDeleting(true);
+    try {
+      const batch = writeBatch(db);
 
-    // Delete all expenses for the current month
-    const expensesRef = collection(db, 'users', userId, 'expenses');
-    const expensesQuery = query(expensesRef, where('month', '==', currentMonth));
-    const expensesSnapshot = await getDocs(expensesQuery);
-    
-    expensesSnapshot.docs.forEach((doc) => {
-      batch.delete(doc.ref);
-    });
+      const expensesRef = collection(db, 'users', userId, 'expenses');
+      const expensesQuery = query(expensesRef, where('month', '==', currentMonth));
+      const expensesSnapshot = await getDocs(expensesQuery);
+      
+      expensesSnapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
 
-    // Delete the budget document
-    const budgetRef = doc(db, 'users', userId, 'budgets', currentMonth);
-    batch.delete(budgetRef);
+      const budgetRef = doc(db, 'users', userId, 'budgets', currentMonth);
+      batch.delete(budgetRef);
 
-    // Commit the batch
-    await batch.commit();
+      await batch.commit();
 
-    console.log('Budget and expenses deleted successfully');
-    
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    
-    setDeleting(false);
-    navigation.navigate('BudgetSetupWizard');
-    
-  } catch (error) {
-    console.error('Error deleting budget:', error);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-    
-    Alert.alert(
-      'Error',
-      'Failed to delete budget. Please try again.',
-      [{ text: 'OK' }]
-    );
-    setDeleting(false);
-  }
-};
+      console.log('Budget and expenses deleted successfully');
+      
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      
+      setDeleting(false);
+      navigation.navigate('BudgetSetupWizard');
+      
+    } catch (error) {
+      console.error('Error deleting budget:', error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      
+      Alert.alert(
+        'Error',
+        'Failed to delete budget. Please try again.',
+        [{ text: 'OK' }]
+      );
+      setDeleting(false);
+    }
+  };
 
-  // ── Derive categories from budget data ──
+  // Derive categories from budget data
   const categories = useMemo(() => {
     if (!budget?.categories) return [];
     
@@ -449,12 +477,12 @@ const deleteCurrentBudget = async () => {
     }).filter(cat => cat.budgeted > 0 || cat.spent > 0);
   }, [budget]);
 
-  // ── Derive recent expenses ──
+  // Derive recent expenses
   const recentExpenses = useMemo(() => {
     return expenses.slice(0, 5);
   }, [expenses]);
 
-  // ── Calculate totals ──
+  // Calculate totals
   const totalIncome = userProfile?.totalIncome || 
                       userProfile?.income || 
                       budget?.income || 
@@ -469,7 +497,7 @@ const deleteCurrentBudget = async () => {
   const expensePercentage = totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0;
   const savingsPercentage = totalIncome > 0 ? Math.round((savingsAmount / totalIncome) * 100) : 0;
   
-  // ── Smart budget metrics for 3D visualization ──
+  // Smart budget metrics for 3D visualization
   const budgetProgress = totalBudget > 0 ? Math.min(totalSpent / totalBudget, 1) : 0;
   const savingsUrgency = totalIncome > 0 ? Math.max(0, 1 - (savingsAmount / totalIncome)) : 0;
   
@@ -496,8 +524,8 @@ const deleteCurrentBudget = async () => {
     return spendingState !== 'healthy' || isSpendingTooFast;
   }, [spendingState, isSpendingTooFast]);
 
-  // Handle smart bot press
-  const handleSmartBotPress = useCallback(() => {
+  // Handle AI Advisor press
+  const handleAIPress = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     navigation.navigate('AIAdvisor', {
       budgetContext: {
@@ -511,6 +539,12 @@ const deleteCurrentBudget = async () => {
       }
     });
   }, [navigation, spendingState, budgetProgress, totalSpent, totalBudget, remaining, isSpendingTooFast, hasSmartInsights]);
+
+  // Handle Add Expense press
+  const handleAddExpensePress = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    navigation.navigate('AddExpenseModal');
+  }, [navigation]);
 
   if (loading || deleting) {
     return (
@@ -554,7 +588,7 @@ const deleteCurrentBudget = async () => {
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
 
-      {/* ── Scrollable Top Tab Bar ── */}
+      {/* Scrollable Top Tab Bar */}
       <ScrollableTopTabBar
         tabs={['Budget', 'Expenses']}
         activeTab="Budget"
@@ -580,7 +614,7 @@ const deleteCurrentBudget = async () => {
         }
         contentContainerStyle={[styles.content, { paddingTop: 4 }]}
       >
-        {/* ── Header ── */}
+        {/* Header with Buttons */}
         <View style={styles.header}>
           <View>
             <Text style={styles.screenTitle}>Budget</Text>
@@ -589,42 +623,14 @@ const deleteCurrentBudget = async () => {
             </Text>
           </View>
 
-      <View style={styles.headerButtonsContainer}>
-  {/* Single Add Expense Button with Bot Icon */}
-  <Pressable
-    onPress={() => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      navigation.navigate('AddExpenseModal');
-    }}
-    style={({ pressed }) => [
-      styles.addExpenseButton,
-      pressed && styles.addExpenseButtonPressed,
-    ]}
-  >
-    <LinearGradient
-      colors={['#1C1C1E', '#2C2C2E']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.addExpenseGradient}
-    >
-      {/* Bot Icon - decorative, no separate onPress */}
-      <View style={styles.botIconWrap}>
-        <Ionicons name="logo-electron" size={14} color="#A29BFE" />
-      </View>
-      
-      {/* Divider */}
-      <View style={styles.buttonDivider} />
-      
-      {/* Add Icon */}
-      <View style={styles.addIconWrap}>
-        <Ionicons name="add" size={22} color="#FFF" />
-      </View>
-    </LinearGradient>
-  </Pressable>
-</View>
-</View>
+          {/* Two Separate Buttons - AI Advisor and Add Expense */}
+          <View style={styles.headerButtonsContainer}>
+            <AIAdvisorButton onPress={handleAIPress} hasInsights={hasSmartInsights} />
+            <AddExpenseButton onPress={handleAddExpensePress} />
+          </View>
+        </View>
 
-        {/* ── 3D Galaxy Visualization Card ── */}
+        {/* 3D Galaxy Visualization Card */}
         <View style={[
           styles.galaxyCard,
           spendingState === 'critical' && styles.galaxyCardCritical,
@@ -696,7 +702,7 @@ const deleteCurrentBudget = async () => {
             ]}>
               <View style={styles.galaxyDetailItem}>
                 <Text style={styles.galaxyDetailValue}>
-                  {totalBudget > 0 ? `R${totalBudget.toLocaleString('en-ZA')}` : '—'}
+                  {totalBudget > 0 ? `M${totalBudget.toLocaleString('en-ZA')}` : '—'}
                 </Text>
                 <Text style={styles.galaxyDetailLabel}>Budget</Text>
               </View>
@@ -715,7 +721,7 @@ const deleteCurrentBudget = async () => {
           </View>
         </View>
 
-        {/* ── Summary Row ── */}
+        {/* Summary Row */}
         <View style={styles.summaryRow}>
           <SummaryCard
             label="Income"
@@ -741,7 +747,7 @@ const deleteCurrentBudget = async () => {
           />
         </View>
 
-        {/* ── Recent Expenses ── */}
+        {/* Recent Expenses */}
         {recentExpenses.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -773,7 +779,7 @@ const deleteCurrentBudget = async () => {
           </View>
         )}
 
-        {/* ── Categories Section ── */}
+        {/* Categories Section */}
         {categories.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -798,7 +804,7 @@ const deleteCurrentBudget = async () => {
           </View>
         )}
 
-        {/* ── Delete Budget Button ── */}
+        {/* Delete Budget Button */}
         <Pressable
           style={({ pressed }) => [
             styles.deleteButton,
@@ -815,34 +821,8 @@ const deleteCurrentBudget = async () => {
           </Text>
         </Pressable>
 
-        {/* ── CTA Banner → AI Advisor ── */}
-        <Pressable
-          style={styles.ctaBanner}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            navigation.navigate('AIAdvisor');
-          }}
-        >
-          <LinearGradient
-            colors={['#1C1C1E', '#2C2C2E']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.ctaGradient}
-          >
-            <View style={styles.ctaContent}>
-              <View style={styles.ctaIconWrap}>
-                <Ionicons name="sparkles-outline" size={24} color="#FFF" />
-              </View>
-              <View style={styles.ctaTextWrap}>
-                <Text style={styles.ctaTitle}>Smart Budget Insights</Text>
-                <Text style={styles.ctaSubtitle}>
-                  AI-powered spending recommendations
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#8E8E93" />
-            </View>
-          </LinearGradient>
-        </Pressable>
+        {/* CTA Banner -> AI Advisor (removed since we have separate button) */}
+        {/* Keeping for now as alternative but can be removed */}
 
         <View style={styles.bottomSpacing} />
       </ScrollView>
@@ -850,7 +830,7 @@ const deleteCurrentBudget = async () => {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// Styles
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -925,185 +905,15 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   
-  // ── Header Buttons Container ──
+  // Header Buttons Container
   headerButtonsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  
-  // ── Combined Button Styles ──
-  combinedButton: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    shadowColor: COLORS.accent,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  combinedButtonPressed: {
-    opacity: 0.8,
-    transform: [{ scale: 0.96 }],
-  },
-  combinedButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 4,
-    paddingVertical: 4,
-    borderRadius: 16,
-  },
-
-  // ── Header Buttons Container ──
-headerButtonsContainer: {
-  flexDirection: 'row',
-  alignItems: 'center',
-},
-
-// ── Add Expense Button ──
-addExpenseButton: {
-  borderRadius: 16,
-  overflow: 'hidden',
-  shadowColor: COLORS.accent,
-  shadowOffset: { width: 0, height: 8 },
-  shadowOpacity: 0.15,
-  shadowRadius: 16,
-  elevation: 8,
-},
-addExpenseButtonPressed: {
-  opacity: 0.8,
-  transform: [{ scale: 0.96 }],
-},
-addExpenseGradient: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  paddingHorizontal: 4,
-  paddingVertical: 4,
-  borderRadius: 16,
-},
-
-// ── Bot Icon Wrap (decorative, no navigation) ──
-botIconWrap: {
-  width: 40,
-  height: 40,
-  borderRadius: 12,
-  justifyContent: 'center',
-  alignItems: 'center',
-  backgroundColor: 'rgba(162, 155, 254, 0.15)',
-},
-
-// ── Add Icon Wrap ──
-addIconWrap: {
-  width: 40,
-  height: 40,
-  borderRadius: 12,
-  justifyContent: 'center',
-  alignItems: 'center',
-  backgroundColor: 'rgba(255, 255, 255, 0.15)',
-},
-
-// ── Button Divider ──
-buttonDivider: {
-  width: 1,
-  height: 24,
-  backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  marginHorizontal: 2,
-},
-  
-  // ── Robot Icon Section ──
-  robotIconSection: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(162, 155, 254, 0.15)',
-  },
-  robotIconSectionPressed: {
-    backgroundColor: 'rgba(162, 155, 254, 0.25)',
-  },
-  
-  // ── Add Icon Section ──
-  addIconSection: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-  },
-  addIconSectionPressed: {
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-  },
-  
-  // ── Button Divider ──
-  buttonDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    marginHorizontal: 2,
-  },
-  
-  // ── Robot Notification Dot ──
-  robotNotificationDot: {
-    position: 'absolute',
-    top: 6,
-    right: 8,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#FF3B30',
-    borderWidth: 1.5,
-    borderColor: '#2C2C2E',
-  },
-  robotNotificationInner: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: '#FFFFFF',
-  },
-  
-  // ── Delete Budget Button ──
-  deleteButton: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 59, 48, 0.2)',
-    shadowColor: COLORS.cardShadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  deleteButtonPressed: {
-    opacity: 0.7,
-    transform: [{ scale: 0.98 }],
-    backgroundColor: 'rgba(255, 59, 48, 0.05)',
-  },
-  deleteButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 12,
-    marginBottom: 6,
-  },
-  deleteButtonText: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: COLORS.negative,
-    letterSpacing: -0.3,
-  },
-  deleteButtonSubtext: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: COLORS.muted,
-    marginLeft: 32,
   },
   
-  // ── Smart Bot Button Styles (Purple button - kept) ──
-  botButton: {
-    width: 48,
-    height: 48,
+  // AI Advisor Button Styles
+  aiButton: {
     borderRadius: 16,
     overflow: 'hidden',
     shadowColor: '#6C5CE7',
@@ -1112,57 +922,85 @@ buttonDivider: {
     shadowRadius: 12,
     elevation: 6,
   },
-  botButtonPressed: {
-    transform: [{ scale: 0.95 }],
+  aiButtonPressed: {
+    transform: [{ scale: 0.96 }],
   },
-  botButtonActive: {
-    transform: [{ scale: 0.92 }],
+  aiButtonActive: {
+    transform: [{ scale: 0.94 }],
   },
-  botGradient: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
+  aiButtonGradient: {
+    flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 8,
   },
-  botGradientActive: {
-    opacity: 0.8,
+  aiButtonGradientActive: {
+    opacity: 0.9,
   },
-  botIconContainer: {
+  aiIconContainer: {
     position: 'relative',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
-  botPulseRing: {
+  aiNotificationDot: {
     position: 'absolute',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-    opacity: 0,
-  },
-  botNotificationDot: {
-    position: 'absolute',
-    top: -8,
-    right: -10,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    top: -6,
+    right: -8,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
     backgroundColor: '#FF3B30',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#6C5CE7',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  botNotificationInner: {
+  aiNotificationInner: {
     width: 4,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFF',
+  },
+  aiButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFF',
+    letterSpacing: -0.2,
   },
   
-  // ── Galaxy Card Styles ──
+  // Add Expense Button Styles
+  addExpenseButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: COLORS.accent,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  addExpenseButtonPressed: {
+    transform: [{ scale: 0.96 }],
+  },
+  addExpenseButtonActive: {
+    transform: [{ scale: 0.94 }],
+  },
+  addExpenseGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  addExpenseGradientActive: {
+    opacity: 0.9,
+  },
+  addExpenseButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFF',
+    letterSpacing: -0.2,
+  },
+  
+  // Galaxy Card Styles
   galaxyCard: {
     height: 300,
     borderRadius: 32,
@@ -1208,7 +1046,6 @@ buttonDivider: {
     backgroundColor: 'rgba(10, 21, 32, 0.4)',
   },
   
-  // ── Alert Banner ──
   alertBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1307,55 +1144,7 @@ buttonDivider: {
     backgroundColor: 'rgba(255,255,255,0.15)',
   },
   
-  // ── Original Ring Styles ──
-  heroCard: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 32,
-    paddingVertical: 32,
-    alignItems: 'center',
-    marginBottom: 20,
-    shadowColor: COLORS.cardShadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 16,
-    elevation: 4,
-  },
-  ringContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  ringContent: {
-    position: 'absolute',
-    alignItems: 'center',
-  },
-  ringRemaining: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: COLORS.text,
-    letterSpacing: -1,
-  },
-  ringLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.muted,
-    marginTop: 2,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  ringPercentage: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: COLORS.muted,
-    marginTop: 4,
-  },
-  budgetLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.muted,
-    marginTop: 16,
-  },
-  
-  // ── Summary & Content Styles ──
+  // Summary & Content Styles
   summaryRow: {
     flexDirection: 'row',
     gap: 10,
@@ -1552,43 +1341,41 @@ buttonDivider: {
     color: COLORS.muted,
     marginTop: 2,
   },
-  ctaBanner: {
-    borderRadius: 24,
-    overflow: 'hidden',
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 24,
-    elevation: 8,
+  deleteButton: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 59, 48, 0.2)',
+    shadowColor: COLORS.cardShadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  ctaGradient: { borderRadius: 24 },
-  ctaContent: {
+  deleteButtonPressed: {
+    opacity: 0.7,
+    transform: [{ scale: 0.98 }],
+    backgroundColor: 'rgba(255, 59, 48, 0.05)',
+  },
+  deleteButtonContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
-    gap: 16,
+    gap: 12,
+    marginBottom: 6,
   },
-  ctaIconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  ctaTextWrap: { flex: 1 },
-  ctaTitle: {
+  deleteButtonText: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#FFF',
+    color: COLORS.negative,
     letterSpacing: -0.3,
-    marginBottom: 4,
   },
-  ctaSubtitle: {
-    fontSize: 14,
+  deleteButtonSubtext: {
+    fontSize: 13,
     fontWeight: '500',
-    color: '#8E8E93',
+    color: COLORS.muted,
+    marginLeft: 32,
   },
   bottomSpacing: { 
     height: 100,

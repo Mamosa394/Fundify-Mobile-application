@@ -27,7 +27,6 @@ import {
 
 const { width } = Dimensions.get('window');
 
-// ─── Design Tokens ────────────────────────────────────────────────────────────
 const COLORS = {
   background: '#F8FAFC',
   surface: '#FFFFFF',
@@ -39,6 +38,7 @@ const COLORS = {
   warning: '#F5A623',
   border: '#E2E8F0',
   inputBg: '#F8FAFC',
+  aiBubble: '#E8EDF5',
 };
 
 const FONTS = {
@@ -53,66 +53,63 @@ const INSIGHT_THEME = {
   alert:    { bg: '#FFF1F2', border: '#F43F5E', text: '#BE123C' },
 };
 
-// ─── Smart Budget Recommendations ─────────────────────────────────────────────
-// These are AI-like recommendations based on student budgeting best practices
 const CATEGORY_RECOMMENDATIONS = {
   food: { 
     type: 'needs', 
-    percent: 0.18, 
-    tip: 'Essential for student life. Cook at home to save.',
+    percent: 0.20, 
+    tip: 'Essential for student life. Cook at home with friends to save. Local markets are cheaper than supermarkets.',
     icon: 'restaurant-outline',
   },
   transport: { 
     type: 'needs', 
-    percent: 0.10, 
-    tip: 'Use student discounts and public transport.',
+    percent: 0.08, 
+    tip: 'Use student discounts on taxis and khombis. Walking saves money on short trips.',
     icon: 'bus-outline',
   },
   data: { 
     type: 'needs', 
-    percent: 0.04, 
-    tip: 'Compare data plans. WiFi on campus saves money.',
+    percent: 0.05, 
+    tip: 'Use campus WiFi when available. Compare prepaid data bundles from Econet, Vodacom, and MTN.',
     icon: 'wifi-outline',
   },
   books: { 
     type: 'needs', 
-    percent: 0.06, 
-    tip: 'Buy second-hand or use library resources.',
+    percent: 0.05, 
+    tip: 'Buy second-hand textbooks from older students. Use NUL library resources.',
     icon: 'book-outline',
   },
   accommodation: { 
     type: 'needs', 
-    percent: 0.25, 
-    tip: 'Largest expense. Consider sharing or student housing.',
+    percent: 0.30, 
+    tip: 'Largest expense. Consider sharing with 2-3 roommates or staying in university hostels.',
     icon: 'home-outline',
   },
   health: { 
     type: 'needs', 
-    percent: 0.05, 
-    tip: 'Use campus clinic. Prevention is cheaper than cure.',
+    percent: 0.04, 
+    tip: 'Use campus clinic. NHIS can help with medical costs.',
     icon: 'fitness-outline',
   },
   entertainment: { 
     type: 'wants', 
     percent: 0.08, 
-    tip: 'Look for student nights and free campus events.',
+    tip: 'Free campus events, hiking in the mountains, and movie nights at home are great low-cost options.',
     icon: 'game-controller-outline',
   },
   savings: { 
     type: 'savings', 
-    percent: 0.20, 
-    tip: 'Pay yourself first! Build an emergency fund.',
+    percent: 0.15, 
+    tip: 'Pay yourself first! Save for emergencies, graduation fees, and future goals.',
     icon: 'save-outline',
   },
   other: { 
     type: 'wants', 
-    percent: 0.04, 
-    tip: 'Keep miscellaneous spending under control.',
+    percent: 0.05, 
+    tip: 'Keep miscellaneous spending under control. Track every Maloti spent.',
     icon: 'apps-outline',
   },
 };
 
-// ─── InsightCard ──────────────────────────────────────────────────────────────
 function InsightCard({ insight, index }) {
   const slideY  = useRef(new Animated.Value(40)).current;
   const opacity = useRef(new Animated.Value(0)).current;
@@ -146,7 +143,87 @@ function InsightCard({ insight, index }) {
   );
 }
 
-// ─── ScoreBadge ───────────────────────────────────────────────────────────────
+function LoadingBubbles() {
+  const [dot1] = useState(new Animated.Value(0));
+  const [dot2] = useState(new Animated.Value(0));
+  const [dot3] = useState(new Animated.Value(0));
+
+  useEffect(() => {
+    const animateDot = (dot, delay) => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(dot, {
+            toValue: -12,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          Animated.timing(dot, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          Animated.delay(600),
+        ])
+      ).start();
+    };
+
+    animateDot(dot1, 0);
+    animateDot(dot2, 150);
+    animateDot(dot3, 300);
+  }, []);
+
+  return (
+    <View style={styles.loadingBubbleContainer}>
+      <View style={styles.loadingBubble}>
+        <Animated.View style={[styles.loadingDot, { transform: [{ translateY: dot1 }] }]} />
+        <Animated.View style={[styles.loadingDot, { transform: [{ translateY: dot2 }] }]} />
+        <Animated.View style={[styles.loadingDot, { transform: [{ translateY: dot3 }] }]} />
+        <Text style={styles.loadingText}>Fin is thinking...</Text>
+      </View>
+    </View>
+  );
+}
+
+function TypingMessage({ text, onComplete, speed = 20 }) {
+  const [displayedText, setDisplayedText] = useState('');
+  const [isComplete, setIsComplete] = useState(false);
+  const indexRef = useRef(0);
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    setDisplayedText('');
+    indexRef.current = 0;
+    setIsComplete(false);
+    
+    if (timerRef.current) clearInterval(timerRef.current);
+    
+    timerRef.current = setInterval(() => {
+      if (indexRef.current < text.length) {
+        setDisplayedText(prev => prev + text[indexRef.current]);
+        indexRef.current++;
+      } else {
+        clearInterval(timerRef.current);
+        setIsComplete(true);
+        if (onComplete) onComplete();
+      }
+    }, speed);
+    
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [text, speed]);
+
+  return (
+    <View style={styles.typingContainer}>
+      <View style={styles.typingBubble}>
+        <Text style={styles.typingMessageText}>{displayedText}</Text>
+        {!isComplete && <Text style={styles.cursor}>|</Text>}
+      </View>
+    </View>
+  );
+}
+
 function ScoreBadge({ score, label, summary }) {
   const color = score >= 80 ? COLORS.positive : score >= 60 ? COLORS.warning : COLORS.negative;
   return (
@@ -166,7 +243,6 @@ function ScoreBadge({ score, label, summary }) {
   );
 }
 
-// ─── BudgetPlanCard ───────────────────────────────────────────────────────────
 function BudgetPlanCard({ category, recommended, tip, icon }) {
   return (
     <View style={styles.planCard}>
@@ -175,10 +251,9 @@ function BudgetPlanCard({ category, recommended, tip, icon }) {
           <View style={[styles.planDot, { backgroundColor: category.color }]} />
           <Text style={styles.planCategoryName}>{category.name}</Text>
         </View>
-        <Text style={styles.planRecommended}>R{recommended.toLocaleString()}</Text>
+        <Text style={styles.planRecommended}>M{recommended.toLocaleString()}</Text>
       </View>
       
-      {/* Progress bar showing percentage of income */}
       <View style={styles.planProgressTrack}>
         <View style={[
           styles.planProgressFill, 
@@ -197,7 +272,6 @@ function BudgetPlanCard({ category, recommended, tip, icon }) {
   );
 }
 
-// ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function AIAdvisorScreen({ navigation }) {
   const insets = useSafeAreaInsets();
 
@@ -210,10 +284,12 @@ export default function AIAdvisorScreen({ navigation }) {
   const [loadingData,    setLoadingData]    = useState(true);
   const [loadingAI,      setLoadingAI]      = useState(false);
   const [budgetPlan,     setBudgetPlan]     = useState(null);
+  const [showTyping,     setShowTyping]     = useState(false);
+  const [typingInsight,  setTypingInsight]  = useState(null);
+  const [insightIndex,   setInsightIndex]   = useState(0);
 
   const userId = auth.currentUser?.uid;
 
-  // ── Bootstrap ──
   useEffect(() => {
     (async () => {
       try {
@@ -227,11 +303,10 @@ export default function AIAdvisorScreen({ navigation }) {
         setExpenses(expData || []);
         setUserProfile(profile);
 
-        // Generate plan regardless of budget existence - just need income
         generateBudgetPlan(profile, expData || []);
 
         if (budget) {
-          runInsights(budget, expData || []);
+          await runInsightsWithTyping(budget, expData || []);
         }
       } catch (e) {
         console.error('AIAdvisor init:', e);
@@ -241,7 +316,6 @@ export default function AIAdvisorScreen({ navigation }) {
     })();
   }, []);
 
-  // ── Refresh on focus ──
   useFocusEffect(
     useCallback(() => {
       (async () => {
@@ -259,7 +333,7 @@ export default function AIAdvisorScreen({ navigation }) {
           generateBudgetPlan(profile, expData || []);
 
           if (budget) {
-            runInsights(budget, expData || []);
+            await runInsightsWithTyping(budget, expData || []);
           }
         } catch (e) {
           console.log('Refresh error:', e);
@@ -268,27 +342,44 @@ export default function AIAdvisorScreen({ navigation }) {
     }, [userId])
   );
 
-  // ── AI Insights ──
-  const runInsights = async (budget, expData) => {
+  const runInsightsWithTyping = async (budget, expData) => {
     if (!budget) return;
 
     setLoadingAI(true);
     setInsightsError(null);
+    setShowTyping(false);
+    setTypingInsight(null);
+    setInsightIndex(0);
     
     try {
       const result = await generateInsights(budget, expData || []);
       setInsights(result);
+      
+      if (result?.insights?.length > 0) {
+        setShowTyping(true);
+        setTypingInsight(result.insights[0]);
+      } else {
+        setLoadingAI(false);
+      }
     } catch (e) {
       console.error('Insights error:', e);
       setInsightsError(e.message || 'Could not load insights.');
-    } finally {
       setLoadingAI(false);
     }
   };
 
-  // ── Generate Smart Budget Plan (AI-like recommendations) ──
+  const handleTypingComplete = () => {
+    const nextIndex = insightIndex + 1;
+    if (insights?.insights && nextIndex < insights.insights.length) {
+      setInsightIndex(nextIndex);
+      setTypingInsight(insights.insights[nextIndex]);
+    } else {
+      setShowTyping(false);
+      setLoadingAI(false);
+    }
+  };
+
   const generateBudgetPlan = (profile, expData) => {
-    // Get total income from profile or fallback
     const totalIncome = profile?.totalIncome || profile?.income || 0;
     
     if (totalIncome <= 0) {
@@ -296,8 +387,6 @@ export default function AIAdvisorScreen({ navigation }) {
       return;
     }
 
-    // Generate pure recommendations based on best practices
-    // NOT using the user's current budget allocations
     const planCategories = BUDGET_CATEGORIES.map(cat => {
       const recommendation = CATEGORY_RECOMMENDATIONS[cat.id];
       
@@ -320,7 +409,6 @@ export default function AIAdvisorScreen({ navigation }) {
       };
     });
 
-    // Calculate totals for the 50/30/20 summary
     const needsTotal = planCategories
       .filter(c => c.type === 'needs')
       .reduce((sum, c) => sum + c.recommended, 0);
@@ -333,7 +421,6 @@ export default function AIAdvisorScreen({ navigation }) {
       .filter(c => c.type === 'savings')
       .reduce((sum, c) => sum + c.recommended, 0);
 
-    // Calculate actual percentages
     const needsPercent = Math.round((needsTotal / totalIncome) * 100);
     const wantsPercent = Math.round((wantsTotal / totalIncome) * 100);
     const savingsPercent = Math.round((savingsTotal / totalIncome) * 100);
@@ -350,9 +437,8 @@ export default function AIAdvisorScreen({ navigation }) {
     });
   };
 
-  const formatMoney = (amount) => `R${Number(amount || 0).toLocaleString('en-ZA')}`;
+  const formatMoney = (amount) => `M${Number(amount || 0).toLocaleString('en-ZA')}`;
 
-  // ── Loading screen ──
   if (loadingData) {
     return (
       <LinearGradient colors={['#F8FAFC', '#E2E8F0']} style={styles.flex}>
@@ -368,7 +454,6 @@ export default function AIAdvisorScreen({ navigation }) {
     <LinearGradient colors={['#F8FAFC', '#E2E8F0', '#CBD5E1']} style={styles.flex}>
       <StatusBar style="dark" />
 
-      {/* Nav Header */}
       <View style={[styles.navHeader, { paddingTop: insets.top + 8 }]}>
         <Pressable
           style={styles.backBtn}
@@ -392,7 +477,7 @@ export default function AIAdvisorScreen({ navigation }) {
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             if (budgetData) {
-              runInsights(budgetData, expenses);
+              runInsightsWithTyping(budgetData, expenses);
             }
             generateBudgetPlan(userProfile, expenses);
           }}
@@ -401,7 +486,6 @@ export default function AIAdvisorScreen({ navigation }) {
         </Pressable>
       </View>
 
-      {/* Tab Bar */}
       <View style={styles.tabBar}>
         {[
           { key: 'insights', label: 'Insights', icon: 'bulb-outline' },
@@ -427,27 +511,20 @@ export default function AIAdvisorScreen({ navigation }) {
         ))}
       </View>
 
-      {/* ─────────────── Insights Tab ─────────────── */}
       {activeTab === 'insights' ? (
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.insightsScroll, { paddingBottom: insets.bottom + 120 }]}
+          contentContainerStyle={[styles.insightsScroll, { paddingBottom: insets.bottom + 100 }]}
         >
-          {loadingAI ? (
-            <View style={styles.aiLoadingBox}>
-              <ActivityIndicator size="large" color={COLORS.accent} />
-              <Text style={styles.aiLoadingTitle}>Analysing your budget…</Text>
-              <Text style={styles.aiLoadingSubtitle}>
-                Fin is reviewing your spending patterns
-              </Text>
-            </View>
+          {loadingAI && !showTyping ? (
+            <LoadingBubbles />
           ) : insightsError ? (
             <View style={styles.errorBox}>
               <Ionicons name="alert-circle-outline" size={40} color={COLORS.negative} />
               <Text style={styles.errorText}>{insightsError}</Text>
               <Pressable
                 style={styles.retryBtn}
-                onPress={() => budgetData && runInsights(budgetData, expenses)}
+                onPress={() => budgetData && runInsightsWithTyping(budgetData, expenses)}
               >
                 <Text style={styles.retryBtnText}>Try Again</Text>
               </Pressable>
@@ -460,7 +537,16 @@ export default function AIAdvisorScreen({ navigation }) {
                 summary={insights.summary}
               />
               <Text style={styles.insightsSectionTitle}>Personalised Insights</Text>
-              {insights.insights?.map((item, i) => (
+              
+              {showTyping && typingInsight ? (
+                <TypingMessage
+                  text={`${typingInsight.emoji || '💡'} ${typingInsight.title}\n\n${typingInsight.message}`}
+                  onComplete={handleTypingComplete}
+                  speed={15}
+                />
+              ) : null}
+              
+              {!showTyping && !loadingAI && insights.insights?.map((item, i) => (
                 <InsightCard key={item.id || i} insight={item} index={i} />
               ))}
             </>
@@ -470,23 +556,20 @@ export default function AIAdvisorScreen({ navigation }) {
               <Text style={styles.errorText}>Set up your budget to see insights.</Text>
               <Pressable
                 style={styles.retryBtn}
-                onPress={() => budgetData && runInsights(budgetData, expenses)}
+                onPress={() => budgetData && runInsightsWithTyping(budgetData, expenses)}
               >
                 <Text style={styles.retryBtnText}>Generate Insights</Text>
               </Pressable>
             </View>
           )}
         </ScrollView>
-
-      /* ─────────────── Budget Plan Tab ─────────────── */
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.planScroll, { paddingBottom: insets.bottom + 120 }]}
+          contentContainerStyle={[styles.planScroll, { paddingBottom: insets.bottom + 100 }]}
         >
           {budgetPlan ? (
             <>
-              {/* Summary Card */}
               <View style={styles.planSummaryCard}>
                 <LinearGradient colors={['#1C1C1E', '#2C2C2E']} style={styles.planSummaryGradient}>
                   <View style={styles.planSummaryHeader}>
@@ -528,7 +611,6 @@ export default function AIAdvisorScreen({ navigation }) {
                 </LinearGradient>
               </View>
 
-              {/* Rule explanation */}
               <View style={styles.ruleBox}>
                 <Ionicons name="information-circle-outline" size={20} color="#3B82F6" />
                 <Text style={styles.ruleText}>
@@ -538,10 +620,9 @@ export default function AIAdvisorScreen({ navigation }) {
                 </Text>
               </View>
 
-              {/* Category Breakdown */}
               <Text style={styles.planSectionTitle}>Recommended Breakdown</Text>
               <Text style={styles.planSectionSubtitle}>
-                Smart allocations based on student living costs in South Africa
+                Smart allocations based on student living costs in Lesotho
               </Text>
               
               {budgetPlan.categories.map((cat, i) => (
@@ -553,7 +634,6 @@ export default function AIAdvisorScreen({ navigation }) {
                 />
               ))}
 
-              {/* Additional Tips */}
               <View style={styles.tipsCard}>
                 <LinearGradient colors={['#EFF6FF', '#F8FAFC']} style={styles.tipsGradient}>
                   <Text style={styles.tipsTitle}>💡 Pro Tips from Fin</Text>
@@ -563,7 +643,7 @@ export default function AIAdvisorScreen({ navigation }) {
                   </View>
                   <View style={styles.tipRow}>
                     <Ionicons name="checkmark-circle" size={16} color={COLORS.positive} />
-                    <Text style={styles.tipText}>Save at least R200/month for emergencies</Text>
+                    <Text style={styles.tipText}>Save at least M200/month for emergencies</Text>
                   </View>
                   <View style={styles.tipRow}>
                     <Ionicons name="checkmark-circle" size={16} color={COLORS.positive} />
@@ -597,7 +677,6 @@ export default function AIAdvisorScreen({ navigation }) {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   flex: { flex: 1 },
 
@@ -608,7 +687,6 @@ const styles = StyleSheet.create({
     fontSize: 15, fontFamily: FONTS.semiBold, color: COLORS.muted,
   },
 
-  // ── Nav ──
   navHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingBottom: 12,
@@ -626,7 +704,6 @@ const styles = StyleSheet.create({
   finBadgeText:{ fontSize: 12, fontFamily: FONTS.bold, color: COLORS.positive },
   refreshBtn:  { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
 
-  // ── Tabs ──
   tabBar: {
     flexDirection: 'row', marginHorizontal: 16, marginBottom: 12,
     backgroundColor: 'rgba(255,255,255,0.85)', borderRadius: 14, padding: 4, gap: 4,
@@ -639,7 +716,6 @@ const styles = StyleSheet.create({
   tabText:       { fontSize: 13, fontFamily: FONTS.semiBold, color: COLORS.muted },
   tabTextActive: { color: COLORS.text },
 
-  // ── Insights ──
   insightsScroll: { paddingTop: 4 },
 
   scoreBadge:   { marginHorizontal: 16, marginBottom: 20, borderRadius: 22, overflow: 'hidden' },
@@ -678,14 +754,37 @@ const styles = StyleSheet.create({
   },
   insightActionText: { fontSize: 12, fontFamily: FONTS.semiBold },
 
-  aiLoadingBox: {
-    alignItems: 'center', paddingVertical: 60, gap: 12,
+  loadingBubbleContainer: {
+    alignItems: 'center', justifyContent: 'center', paddingVertical: 40,
   },
-  aiLoadingTitle: {
-    fontSize: 17, fontFamily: FONTS.bold, color: COLORS.text,
+  loadingBubble: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, backgroundColor: COLORS.aiBubble, paddingHorizontal: 20,
+    paddingVertical: 14, borderRadius: 24, minWidth: 140,
   },
-  aiLoadingSubtitle: {
+  loadingDot: {
+    width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.accent,
+  },
+  loadingText: {
     fontSize: 13, fontFamily: FONTS.semiBold, color: COLORS.muted,
+    marginLeft: 8,
+  },
+
+  typingContainer: {
+    marginHorizontal: 16, marginBottom: 16,
+  },
+  typingBubble: {
+    backgroundColor: COLORS.aiBubble, borderRadius: 20,
+    paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  typingMessageText: {
+    fontSize: 14, fontFamily: FONTS.semiBold, color: COLORS.text,
+    lineHeight: 22, flexShrink: 1,
+  },
+  cursor: {
+    fontSize: 16, color: COLORS.accent, fontWeight: 'bold',
+    marginLeft: 2,
   },
 
   errorBox: {
@@ -705,7 +804,6 @@ const styles = StyleSheet.create({
   },
   retryBtnText: { fontSize: 15, fontFamily: FONTS.bold, color: '#FFF' },
 
-  // ── Budget Plan ──
   planScroll: { paddingTop: 4 },
 
   planSummaryCard: {
@@ -807,7 +905,6 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
 
-  // ── Tips Card ──
   tipsCard: {
     marginHorizontal: 16, marginTop: 8, marginBottom: 20,
     borderRadius: 16, overflow: 'hidden',
