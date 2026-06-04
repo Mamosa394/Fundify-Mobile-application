@@ -589,71 +589,40 @@ const deleteCurrentBudget = async () => {
             </Text>
           </View>
 
-          <View style={styles.headerButtonsContainer}>
-            {/* Combined Robot + Add Button */}
-            <Pressable
-              style={({ pressed }) => [
-                styles.combinedButton,
-                pressed && styles.combinedButtonPressed,
-              ]}
-            >
-              <LinearGradient
-                colors={['#1C1C1E', '#2C2C2E']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.combinedButtonGradient}
-              >
-                {/* Robot Icon */}
-                <Pressable
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    navigation.navigate('AIAdvisor', {
-                      budgetContext: {
-                        spendingState,
-                        budgetProgress,
-                        totalSpent,
-                        totalBudget,
-                        remaining,
-                      }
-                    });
-                  }}
-                  style={({ pressed }) => [
-                    styles.robotIconSection,
-                    pressed && styles.robotIconSectionPressed,
-                  ]}
-                >
-                  <Ionicons 
-                    name="hardware-chip-outline" 
-                    size={18} 
-                    color="#A29BFE" 
-                  />
-                  {hasSmartInsights && (
-                    <View style={styles.robotNotificationDot}>
-                      <View style={styles.robotNotificationInner} />
-                    </View>
-                  )}
-                </Pressable>
-
-                {/* Divider */}
-                <View style={styles.buttonDivider} />
-
-                {/* Add Icon */}
-                <Pressable
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    navigation.navigate('AddExpenseModal');
-                  }}
-                  style={({ pressed }) => [
-                    styles.addIconSection,
-                    pressed && styles.addIconSectionPressed,
-                  ]}
-                >
-                  <Ionicons name="add" size={22} color="#FFF" />
-                </Pressable>
-              </LinearGradient>
-            </Pressable>
-          </View>
-        </View>
+      <View style={styles.headerButtonsContainer}>
+  {/* Single Add Expense Button with Bot Icon */}
+  <Pressable
+    onPress={() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      navigation.navigate('AddExpenseModal');
+    }}
+    style={({ pressed }) => [
+      styles.addExpenseButton,
+      pressed && styles.addExpenseButtonPressed,
+    ]}
+  >
+    <LinearGradient
+      colors={['#1C1C1E', '#2C2C2E']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.addExpenseGradient}
+    >
+      {/* Bot Icon - decorative, no separate onPress */}
+      <View style={styles.botIconWrap}>
+        <Ionicons name="logo-electron" size={14} color="#A29BFE" />
+      </View>
+      
+      {/* Divider */}
+      <View style={styles.buttonDivider} />
+      
+      {/* Add Icon */}
+      <View style={styles.addIconWrap}>
+        <Ionicons name="add" size={22} color="#FFF" />
+      </View>
+    </LinearGradient>
+  </Pressable>
+</View>
+</View>
 
         {/* ── 3D Galaxy Visualization Card ── */}
         <View style={[
@@ -983,6 +952,62 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 16,
   },
+
+  // ── Header Buttons Container ──
+headerButtonsContainer: {
+  flexDirection: 'row',
+  alignItems: 'center',
+},
+
+// ── Add Expense Button ──
+addExpenseButton: {
+  borderRadius: 16,
+  overflow: 'hidden',
+  shadowColor: COLORS.accent,
+  shadowOffset: { width: 0, height: 8 },
+  shadowOpacity: 0.15,
+  shadowRadius: 16,
+  elevation: 8,
+},
+addExpenseButtonPressed: {
+  opacity: 0.8,
+  transform: [{ scale: 0.96 }],
+},
+addExpenseGradient: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  paddingHorizontal: 4,
+  paddingVertical: 4,
+  borderRadius: 16,
+},
+
+// ── Bot Icon Wrap (decorative, no navigation) ──
+botIconWrap: {
+  width: 40,
+  height: 40,
+  borderRadius: 12,
+  justifyContent: 'center',
+  alignItems: 'center',
+  backgroundColor: 'rgba(162, 155, 254, 0.15)',
+},
+
+// ── Add Icon Wrap ──
+addIconWrap: {
+  width: 40,
+  height: 40,
+  borderRadius: 12,
+  justifyContent: 'center',
+  alignItems: 'center',
+  backgroundColor: 'rgba(255, 255, 255, 0.15)',
+},
+
+// ── Button Divider ──
+buttonDivider: {
+  width: 1,
+  height: 24,
+  backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  marginHorizontal: 2,
+},
   
   // ── Robot Icon Section ──
   robotIconSection: {
