@@ -1,19 +1,15 @@
 // src/services/exportService.js
 
 import * as Print      from 'expo-print';
-import * as FileSystem from 'expo-file-system/legacy'; // Import from legacy
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing    from 'expo-sharing';
-
-// Alternative: If you want to use the new API, import like this:
-// import { File, Directory } from 'expo-file-system';
-// But the legacy API is simpler for this use case
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const safeFilename = (name) =>
   name.replace(/[^a-zA-Z0-9]/g, '_');
 
 const dateStamp = () =>
-  new Date().toISOString().split('T')[0]; // e.g. 2025-06-02
+  new Date().toISOString().split('T')[0];
 
 const groupByDate = (expenses) => {
   const map = {};
@@ -32,6 +28,12 @@ const groupByDate = (expenses) => {
 // ─── CSV Export ───────────────────────────────────────────────────────────────
 export const exportAsCSV = async (expenses, categoryName) => {
   try {
+    // Check sharing availability first
+    const canShare = await Sharing.isAvailableAsync();
+    if (!canShare) {
+      throw new Error('Sharing is not available on this device.');
+    }
+
     const sorted = [...expenses].sort(
       (a, b) => new Date(b.date) - new Date(a.date)
     );
@@ -45,8 +47,7 @@ export const exportAsCSV = async (expenses, categoryName) => {
         const timeStr = d.toLocaleTimeString('en-ZA', {
           hour: '2-digit', minute: '2-digit',
         });
-        // Wrap note in quotes to handle commas inside text
-        const note    = `"${(e.note || 'No description').replace(/"/g, '""')}"`;
+        const note = `"${(e.note || 'No description').replace(/"/g, '""')}"`;
         return `${dateStr},${timeStr},${note},${e.amount}`;
       })
       .join('\n');
@@ -62,14 +63,18 @@ export const exportAsCSV = async (expenses, categoryName) => {
       encoding: FileSystem.EncodingType.UTF8,
     });
 
-    const canShare = await Sharing.isAvailableAsync();
-    if (!canShare) throw new Error('Sharing is not available on this device.');
-
     await Sharing.shareAsync(fileUri, {
       mimeType:    'text/csv',
       dialogTitle: `Export ${categoryName} Expenses`,
       UTI:         'public.comma-separated-values-text',
     });
+
+    // Clean up temp file
+    try {
+      await FileSystem.deleteAsync(fileUri, { idempotent: true });
+    } catch (_) {
+      // ignore cleanup errors
+    }
   } catch (error) {
     console.error('CSV Export Error:', error);
     throw error;
@@ -79,6 +84,12 @@ export const exportAsCSV = async (expenses, categoryName) => {
 // ─── PDF Export ───────────────────────────────────────────────────────────────
 export const exportAsPDF = async (expenses, categoryName, budgetData, categoryId) => {
   try {
+    // Check sharing availability first
+    const canShare = await Sharing.isAvailableAsync();
+    if (!canShare) {
+      throw new Error('Sharing is not available on this device.');
+    }
+
     const catBudget = budgetData?.categories?.[categoryId];
     const budgeted  = catBudget?.budgeted || 0;
     const spent     = expenses.reduce((s, e) => s + e.amount, 0);
@@ -136,8 +147,6 @@ export const exportAsPDF = async (expenses, categoryName, budgetData, categoryId
       padding: 36px 40px;
       font-size: 13px;
     }
-
-    /* ── Header ── */
     .report-header {
       display: flex;
       justify-content: space-between;
@@ -175,8 +184,6 @@ export const exportAsPDF = async (expenses, categoryName, budgetData, categoryId
       color: #94A3B8;
       text-align: right;
     }
-
-    /* ── Summary Stats ── */
     .stats-grid {
       display: flex;
       gap: 12px;
@@ -205,8 +212,6 @@ export const exportAsPDF = async (expenses, categoryName, budgetData, categoryId
     }
     .negative { color: #FF3B30; }
     .positive { color: #34C759; }
-
-    /* ── Table ── */
     table {
       width: 100%;
       border-collapse: collapse;
@@ -224,7 +229,6 @@ export const exportAsPDF = async (expenses, categoryName, budgetData, categoryId
       text-transform: uppercase;
     }
     thead th.right { text-align: right; }
-
     .group-header { background: #F1F5F9; }
     .group-date {
       padding: 9px 12px;
@@ -239,7 +243,6 @@ export const exportAsPDF = async (expenses, categoryName, budgetData, categoryId
       color: #64748B;
       text-align: right;
     }
-
     .cell {
       padding: 9px 12px;
       font-size: 12px;
@@ -248,8 +251,6 @@ export const exportAsPDF = async (expenses, categoryName, budgetData, categoryId
     }
     .right { text-align: right; }
     .bold  { font-weight: 700; color: #0F172A; }
-
-    /* ── Footer row ── */
     .total-row td {
       background: #1C1C1E;
       padding: 12px;
@@ -262,8 +263,6 @@ export const exportAsPDF = async (expenses, categoryName, budgetData, categoryId
       color: #34C759;
       font-size: 16px;
     }
-
-    /* ── Page footer ── */
     .page-footer {
       margin-top: 28px;
       padding-top: 14px;
@@ -276,8 +275,6 @@ export const exportAsPDF = async (expenses, categoryName, budgetData, categoryId
   </style>
 </head>
 <body>
-
-  <!-- Header -->
   <div class="report-header">
     <div>
       <div class="badge">Student Budget App</div>
@@ -286,8 +283,6 @@ export const exportAsPDF = async (expenses, categoryName, budgetData, categoryId
     </div>
     <div class="report-date">Generated on<br/>${generatedOn}</div>
   </div>
-
-  <!-- Summary stats -->
   <div class="stats-grid">
     <div class="stat-box">
       <div class="stat-label">Total Spent</div>
@@ -308,8 +303,6 @@ export const exportAsPDF = async (expenses, categoryName, budgetData, categoryId
       <div class="stat-value">${expenses.length}</div>
     </div>
   </div>
-
-  <!-- Expenses table -->
   <table>
     <thead>
       <tr>
@@ -328,34 +321,38 @@ export const exportAsPDF = async (expenses, categoryName, budgetData, categoryId
       </tr>
     </tfoot>
   </table>
-
-  <!-- Page footer -->
   <div class="page-footer">
     <span>Student Budget App — For personal record keeping only</span>
     <span>${new Date().toLocaleDateString('en-ZA')}</span>
   </div>
-
 </body>
 </html>`;
 
     // ── Generate PDF ──
-    const { uri } = await Print.printToFileAsync({ html, base64: false });
+    const { uri } = await Print.printToFileAsync({ html });
 
     // Rename to a meaningful filename
     const filename = `${safeFilename(categoryName)}_expenses_${dateStamp()}.pdf`;
     const newUri   = FileSystem.documentDirectory + filename;
     
-    // FIXED: Use the new API or legacy moveAsync
-    await FileSystem.moveAsync({ from: uri, to: newUri });
-
-    const canShare = await Sharing.isAvailableAsync();
-    if (!canShare) throw new Error('Sharing is not available on this device.');
+    // Use the correct moveAsync signature for the new expo-file-system
+    await FileSystem.moveAsync({
+      from: uri,
+      to: newUri,
+    });
 
     await Sharing.shareAsync(newUri, {
       mimeType:    'application/pdf',
       dialogTitle: `Export ${categoryName} Expenses`,
       UTI:         'com.adobe.pdf',
     });
+
+    // Clean up temp file
+    try {
+      await FileSystem.deleteAsync(newUri, { idempotent: true });
+    } catch (_) {
+      // ignore cleanup errors
+    }
   } catch (error) {
     console.error('PDF Export Error:', error);
     throw error;

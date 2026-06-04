@@ -2,210 +2,163 @@ import * as SecureStore from 'expo-secure-store';
 
 const STORE_KEY = 'BUDGET_APP_GEMINI_KEY';
 
-// ================= MODEL =================
 const MODEL = 'gemini-2.5-flash';
 
 const ENDPOINT =
-  `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
-const STREAM_ENDPOINT =
-  `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:streamGenerateContent`;
+// ─────────────────────────────────────────────
+// Key storage
+// ─────────────────────────────────────────────
 
+export const saveApiKey = async (key) => {
+  return SecureStore.setItemAsync(STORE_KEY, key);
+};
 
-// ================= KEY MANAGEMENT =================
-export const saveApiKey = (key) =>
-  SecureStore.setItemAsync(STORE_KEY, key);
+export const getStoredApiKey = async () => {
+  return SecureStore.getItemAsync(STORE_KEY);
+};
 
-export const getStoredApiKey = () =>
-  SecureStore.getItemAsync(STORE_KEY);
+export const clearApiKey = async () => {
+  return SecureStore.deleteItemAsync(STORE_KEY);
+};
 
-export const clearApiKey = () =>
-  SecureStore.deleteItemAsync(STORE_KEY);
+// ─────────────────────────────────────────────
+// Budget context
+// ─────────────────────────────────────────────
 
-
-// ================= BUILD BUDGET CONTEXT =================
 const buildContext = (budgetData, expenses = []) => {
-  if (!budgetData) return 'No budget data available yet';
 
-  const catLines = Object.entries(
-    budgetData.categories || {}
-  )
-    .map(([id, c]) => {
-      const spent = c.spent || 0;
-      const budgeted = c.budgeted || 0;
+  if (!budgetData)
+    return 'No budget data available';
 
-      const pct =
-        budgeted > 0
-          ? Math.round((spent / budgeted) * 100)
-          : 0;
+  const categories =
+    Object.values(budgetData.categories || {})
+      .map(cat => {
 
-      return `• ${c.name || id}: R${spent} spent / R${budgeted} (${pct}%)`;
-    })
-    .join('\n');
+        const spent = cat.spent || 0;
+        const budgeted = cat.budgeted || 0;
 
-  const topSpend = [...expenses]
-    .sort((a, b) => b.amount - a.amount)
-    .slice(0, 5)
-    .map(
-      e =>
-        `• R${e.amount} - ${e.category}${
-          e.note ? ` (${e.note})` : ''
-        }`
-    )
-    .join('\n');
+        return `${cat.name}: spent R${spent}, budget R${budgeted}`;
 
-  const total = budgetData.totalBudget || 0;
-  const spent = budgetData.spentTotal || 0;
-  const remaining = total - spent;
+      })
+      .join('\n');
 
   return `
-Monthly Budget: R${total}
-Spent: R${spent}
-Remaining: R${remaining}
+Budget: R${budgetData.totalBudget || 0}
 
-Savings:
-R${budgetData.categories?.savings?.budgeted || 0}
+Spent: R${budgetData.spentTotal || 0}
 
-Category Breakdown:
-${catLines || 'No categories'}
+Categories:
+${categories}
 
-Top Expenses:
-${topSpend || 'No expenses'}
-`.trim();
+Recent expenses:
+${expenses
+  .slice(0,5)
+  .map(e => `R${e.amount} ${e.category}`)
+  .join('\n')}
+`;
 };
 
+// ─────────────────────────────────────────────
+// Insights
+// ─────────────────────────────────────────────
 
-// ================= ERROR HANDLER =================
-const parseError = (err, status) => {
-  const message = err?.error?.message || '';
+export const generateInsights = async (
+  budgetData,
+  expenses,
+  apiKey
+) => {
 
-  if (
-    message.includes('quota') ||
-    message.includes('limit: 0')
-  ) {
-    return 'No Gemini quota available. Create a new API key/project.';
-  }
+  const context =
+    buildContext(budgetData, expenses);
 
-  if (
-    message.includes('API key not valid') ||
-    status === 403
-  ) {
-    return 'Invalid Gemini API key.';
-  }
+  try {
 
-  if (status === 429) {
-    return 'Too many requests. Please wait.';
-  }
+    const res = await fetch(
+      `${ENDPOINT}?key=${apiKey}`,
+      {
+        method:'POST',
+        headers:{
+          'Content-Type':'application/json'
+        },
+        body:JSON.stringify({
 
-  return message || `Gemini error ${status}`;
-};
-
-
-// ================= GENERATE INSIGHTS =================
-export const generateInsights = async (budgetData, expenses, apiKey) => {
-  const context = buildContext(budgetData, expenses);
-
-  const prompt = `
-You are Fin, a friendly budget advisor for South African university students.
-
+          contents:[
+            {
+              parts:[
+                {
+                  text:`
 Return ONLY JSON.
 
 {
-  "score":0,
-  "scoreLabel":"",
-  "summary":"",
-  "insights":[
-    {
-      "id":"1",
-      "type":"warning",
-      "emoji":"⚠️",
-      "title":"",
-      "message":"",
-      "action":""
-    }
-  ]
+ "score":75,
+ "scoreLabel":"Good",
+ "summary":"summary text",
+ "insights":[
+   {
+    "id":"1",
+    "type":"tip",
+    "emoji":"💡",
+    "title":"title",
+    "message":"message",
+    "action":"action"
+   }
+ ]
 }
 
-Rules:
-- Exactly 4 insights
-- One must be positive
-- Keep each message under 20 words
-- Keep summary under 15 words
-- No markdown
-- No extra text
+Generate exactly 4 insights.
 
 Budget:
+
 ${context}
-`;
+`
+                }
+              ]
+            }
+          ],
 
-  try {
-    const res = await fetch(`${ENDPOINT}?key=${apiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: prompt }]
+          generationConfig:{
+            temperature:0.3,
+            responseMimeType:"application/json"
           }
-        ],
-        generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: 2000, // increased
-          responseMimeType: "application/json"
-        }
-      })
-    });
 
-    const data = await res.json();
+        })
+      }
+    );
 
-    if (!res.ok) {
-      throw new Error(
-        data?.error?.message ||
-        `Gemini ${res.status}`
-      );
-    }
+    const data=await res.json();
 
     const text =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      data.candidates?.[0]
+      ?.content?.parts?.[0]
+      ?.text;
 
-    if (!text) {
-      throw new Error("Empty response");
-    }
+    console.log("RAW AI:",text);
 
-    console.log("RAW AI:", text);
+    if(!text)
+      throw new Error("No response");
 
-    try {
-      return JSON.parse(text);
-    } catch {
-      console.log("Bad JSON:", text);
+    return JSON.parse(text);
 
-      return {
-        score: 70,
-        scoreLabel: "Good",
-        summary: "Budget analysed successfully",
-        insights: [
-          {
-            id:"1",
-            type:"tip",
-            emoji:"💡",
-            title:"AI Formatting Issue",
-            message:"The AI returned incomplete data.",
-            action:"Refresh"
-          }
-        ]
-      };
-    }
+  }
 
-  } catch(error) {
-    console.log("generateInsights:", error);
+  catch(error){
+
+    console.log(
+      "generateInsights:",
+      error
+    );
+
     throw error;
   }
+
 };
 
+// ─────────────────────────────────────────────
+// Chat
+// ─────────────────────────────────────────────
 
-// ================= STREAM CHAT =================
 export const streamChatMessage = async (
   messages,
   budgetData,
@@ -214,176 +167,102 @@ export const streamChatMessage = async (
   onChunk,
   onDone,
   onError
-) => {
+)=>{
 
-  const context =
-    buildContext(
-      budgetData,
-      expenses
-    );
+try{
 
-  const contents = [
-    {
-      role: 'user',
-      parts: [{
-        text: `
-You are Fin.
+const context =
+buildContext(
+budgetData,
+expenses
+);
 
-Budget data:
+const prompt=`
+
+You are Fin, a student budgeting advisor.
+
+Budget:
 
 ${context}
 
-Rules:
-- Max 3 sentences
-- Friendly
-- Practical
-- Never mention AI
-        `
-      }]
-    },
-    {
-      role: 'model',
-      parts: [{
-        text:
-        'Ready to help.'
-      }]
-    }
-  ];
+Conversation:
 
-  messages.forEach(msg => {
-    contents.push({
-      role:
-        msg.role === 'assistant'
-          ? 'model'
-          : 'user',
+${messages
+.map(
+m=>`${m.role}: ${m.content}`
+)
+.join('\n')}
 
-      parts: [{
-        text: msg.content
-      }]
-    });
-  });
+Reply briefly.
+`;
 
-  try {
+const res=await fetch(
+`${ENDPOINT}?key=${apiKey}`,
+{
+method:'POST',
 
-    const res = await fetch(
-      `${STREAM_ENDPOINT}?alt=sse&key=${apiKey}`,
-      {
-        method:'POST',
+headers:{
+'Content-Type':'application/json'
+},
 
-        headers:{
-          'Content-Type':
-            'application/json'
-        },
+body:JSON.stringify({
 
-        body: JSON.stringify({
-          contents,
+contents:[
+{
+parts:[
+{
+text:prompt
+}
+]
+}
+],
 
-          generationConfig:{
-            temperature:0.75,
-            topP:0.95,
-            topK:40,
-            maxOutputTokens:500
-          }
-        })
-      }
-    );
+generationConfig:{
+temperature:0.7
+}
 
-    if(!res.ok){
+})
+}
+);
 
-      const err=
-      await res.json()
-      .catch(()=>({}));
+const data =
+await res.json();
 
-      throw new Error(
-        parseError(
-          err,
-          res.status
-        )
-      );
-    }
+const text =
+data.candidates?.[0]
+?.content?.parts?.[0]
+?.text;
 
-    const reader=
-      res.body.getReader();
+if(!text){
 
-    const decoder=
-      new TextDecoder();
+throw new Error(
+'Empty response'
+);
 
-    let fullText='';
+}
 
-    while(true){
+onChunk(
+text,
+text
+);
 
-      const {
-        done,
-        value
-      }=
-      await reader.read();
+onDone(
+text
+);
 
-      if(done) break;
+}
 
-      const chunk=
-      decoder.decode(
-        value,
-        {
-          stream:true
-        }
-      );
+catch(error){
 
-      const lines=
-      chunk.split('\n');
+console.log(
+'Chat error:',
+error
+);
 
-      for(
-        const line
-        of lines
-      ){
+onError(
+error
+);
 
-        if(
-          !line.startsWith(
-            'data:'
-          )
-        )
-        continue;
+}
 
-        try{
-
-          const json=
-          JSON.parse(
-            line.replace(
-              'data:',
-              ''
-            )
-          );
-
-          const text=
-          json
-          ?.candidates?.[0]
-          ?.content?.parts?.[0]
-          ?.text;
-
-          if(text){
-
-            fullText+=text;
-
-            onChunk(
-              text,
-              fullText
-            );
-          }
-
-        }catch{
-          // ignore malformed chunks
-        }
-      }
-    }
-
-    onDone(fullText);
-
-  } catch(error){
-
-    console.log(
-      'Stream error:',
-      error
-    );
-
-    onError(error);
-  }
 };

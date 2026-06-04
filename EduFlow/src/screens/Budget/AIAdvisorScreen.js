@@ -135,7 +135,7 @@ function ChatBubble({ message, isStreaming }) {
       <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAI]}>
         <Text style={[styles.bubbleText, isUser && styles.bubbleTextUser]}>
           {message.content}
-          {isStreaming ? <Text style={styles.cursor}>▌</Text> : null}
+          {isStreaming && message.content ? <Text style={styles.cursor}>▌</Text> : null}
         </Text>
       </View>
     </View>
@@ -237,55 +237,64 @@ export default function AIAdvisorScreen({ navigation }) {
   const [chatInput,      setChatInput]      = useState('');
   const [isTyping,       setIsTyping]       = useState(false);
   const [streamingId,    setStreamingId]    = useState(null);
+  const [isStreamingActive, setIsStreamingActive] = useState(false);
 
   const chatRef   = useRef(null);
   const userId    = auth.currentUser?.uid;
 
   // ── Bootstrap ──
   useEffect(() => {
-  (async () => {
-    try {
-      const [key, budget, expData] = await Promise.all([
-        getStoredApiKey(),
-        getCurrentBudget(userId),
-        getExpenses(userId),
-      ]);
+    (async () => {
+      try {
+        const [key, budget, expData] = await Promise.all([
+          getStoredApiKey(),
+          getCurrentBudget(userId),
+          getExpenses(userId),
+        ]);
 
-      // Remove old saved key once
-      if (key) {
-        await clearApiKey();
-
-        setApiKey(null);
-        setHasKey(false);
-
-        console.log('Old Gemini key removed');
+        if (key) {
+          setApiKey(key);
+          setHasKey(true);
+          setBudgetData(budget);
+          setExpenses(expData || []);
+          // Generate insights immediately
+          runInsights(key, budget, expData || []);
+        } else {
+          setBudgetData(budget);
+          setExpenses(expData || []);
+        }
+      } catch (e) {
+        console.error('AIAdvisor init:', e);
+      } finally {
+        setLoadingData(false);
       }
-
-      setBudgetData(budget);
-      setExpenses(expData || []);
-
-    } catch (e) {
-      console.error('AIAdvisor init:', e);
-    } finally {
-      setLoadingData(false);
-    }
-  })();
-}, []);
+    })();
+  }, []);
 
   useFocusEffect(useCallback(() => {
     // Refresh budget data when tab refocused
     (async () => {
       try {
         const [budget, expData] = await Promise.all([
-          getCurrentBudget(userId), getExpenses(userId),
+          getCurrentBudget(userId), 
+          getExpenses(userId),
         ]);
         setBudgetData(budget);
         setExpenses(expData || []);
-      } catch (e) { /* silent */ }
+        
+        // Refresh insights if we have a key and budget data
+        if (hasKey && budget) {
+          runInsights(apiKey, budget, expData || []);
+        }
+      } catch (e) { 
+        console.log('Refresh error:', e);
+      }
     })();
-  }, [userId]));
+  }, [userId, hasKey]));
 
   const runInsights = async (key, budget, expData) => {
+    if (!key || !budget) return;
+    
     setLoadingAI(true);
     setInsightsError(null);
     try {
@@ -308,58 +317,72 @@ export default function AIAdvisorScreen({ navigation }) {
   // ── Send chat message ──
   const sendMessage = async (text) => {
     const msg = (text ?? chatInput).trim();
-    if (!msg || isTyping) return;
+    if (!msg || isTyping || isStreamingActive) return;
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setChatInput('');
 
-    const userMsg    = { role: 'user', content: msg, id: `u${Date.now()}` };
+    const userMsg = { role: 'user', content: msg, id: `u${Date.now()}` };
     const updatedLog = [...chatMessages, userMsg];
     setChatMessages(updatedLog);
     setIsTyping(true);
+    setIsStreamingActive(true);
 
     const streamId = `a${Date.now()}`;
     setChatMessages(prev => [...prev, { role: 'assistant', content: '', id: streamId }]);
     setStreamingId(streamId);
+    
     setTimeout(() => chatRef.current?.scrollToEnd({ animated: true }), 80);
 
     const apiMsgs = updatedLog.map(({ role, content }) => ({ role, content }));
 
-    await streamChatMessage(
-      apiMsgs, budgetData, expenses, apiKey,
-      (_token, fullText) => {
-        setChatMessages(prev =>
-          prev.map(m => m.id === streamId ? { ...m, content: fullText } : m)
-        );
-        chatRef.current?.scrollToEnd({ animated: false });
-      },
-      (finalText) => {
-        setChatMessages(prev =>
-          prev.map(m => m.id === streamId ? { ...m, content: finalText } : m)
-        );
-        setStreamingId(null);
-        setIsTyping(false);
-      },
-      (err) => {
-        console.error('chat stream error:', err);
-        let errorMessage = 'Sorry, something went wrong. Please try again.';
-        
-        if (err.message?.includes('API key not valid') || err.message?.includes('403')) {
-          errorMessage = 'Invalid API key. Please get a new one from aistudio.google.com/apikey';
-        } else if (err.message?.includes('quota') || err.message?.includes('429')) {
-          errorMessage = 'Rate limit reached. Wait a moment and try again.';
-        }
-        
-        setChatMessages(prev =>
-          prev.map(m => m.id === streamId
-            ? { ...m, content: errorMessage }
-            : m
-          )
-        );
-        setStreamingId(null);
-        setIsTyping(false);
-      },
-    );
+    try {
+      await streamChatMessage(
+        apiMsgs, budgetData, expenses, apiKey,
+        (chunk, fullText) => {
+          setChatMessages(prev =>
+            prev.map(m => m.id === streamId ? { ...m, content: fullText } : m)
+          );
+          chatRef.current?.scrollToEnd({ animated: false });
+        },
+        (finalText) => {
+          setChatMessages(prev =>
+            prev.map(m => m.id === streamId ? { ...m, content: finalText } : m)
+          );
+          setStreamingId(null);
+          setIsTyping(false);
+          setIsStreamingActive(false);
+          chatRef.current?.scrollToEnd({ animated: true });
+        },
+        (err) => {
+          console.error('chat stream error:', err);
+          let errorMessage = 'Sorry, something went wrong. Please try again.';
+          
+          if (err.message?.includes('API key not valid') || err.message?.includes('403')) {
+            errorMessage = '⚠️ Invalid API key. Please go back and re-enter your Gemini key.';
+          } else if (err.message?.includes('quota') || err.message?.includes('429')) {
+            errorMessage = '⏳ Rate limit reached. Please wait a moment and try again.';
+          } else if (err.message?.includes('network') || err.message?.includes('fetch')) {
+            errorMessage = '📡 Network error. Check your connection and try again.';
+          }
+          
+          setChatMessages(prev =>
+            prev.map(m => m.id === streamId
+              ? { ...m, content: errorMessage, error: true }
+              : m
+            )
+          );
+          setStreamingId(null);
+          setIsTyping(false);
+          setIsStreamingActive(false);
+        },
+      );
+    } catch (error) {
+      console.error('Send message error:', error);
+      setIsTyping(false);
+      setIsStreamingActive(false);
+      setStreamingId(null);
+    }
   };
 
   // ── Loading screen ──
@@ -477,18 +500,19 @@ export default function AIAdvisorScreen({ navigation }) {
                 summary={insights.summary}
               />
               <Text style={styles.insightsSectionTitle}>Personalised Insights</Text>
-              {insights.insights.map((item, i) => (
-                <InsightCard key={item.id} insight={item} index={i} />
+              {insights.insights?.map((item, i) => (
+                <InsightCard key={item.id || i} insight={item} index={i} />
               ))}
 
               {/* Settings row */}
               <Pressable
                 style={styles.keySettingsRow}
-                onPress={() => {
-                  clearApiKey();
+                onPress={async () => {
+                  await clearApiKey();
                   setHasKey(false);
                   setApiKey(null);
                   setInsights(null);
+                  setChatMessages([]);
                 }}
               >
                 <Ionicons name="key-outline" size={14} color={COLORS.muted} />
@@ -555,13 +579,11 @@ export default function AIAdvisorScreen({ navigation }) {
                 multiline
                 maxLength={300}
                 selectionColor={COLORS.accent}
-                onSubmitEditing={() => sendMessage()}
-                blurOnSubmit={false}
               />
               <Pressable
-                style={[styles.sendBtn, (!chatInput.trim() || isTyping) && styles.sendBtnDisabled]}
+                style={[styles.sendBtn, (!chatInput.trim() || isTyping || isStreamingActive) && styles.sendBtnDisabled]}
                 onPress={() => sendMessage()}
-                disabled={!chatInput.trim() || isTyping}
+                disabled={!chatInput.trim() || isTyping || isStreamingActive}
               >
                 <Ionicons name="arrow-up" size={18} color="#FFF" />
               </Pressable>
@@ -763,7 +785,7 @@ const styles = StyleSheet.create({
   },
   bubbleText:     { fontSize: 14, fontFamily: FONTS.semiBold, color: COLORS.text, lineHeight: 20 },
   bubbleTextUser: { color: '#FFF' },
-  cursor:         { color: COLORS.muted },
+  cursor:         { color: COLORS.muted, opacity: 0.8 },
 
   typingBubble: {
     flexDirection: 'row', alignItems: 'center', gap: 5,

@@ -39,7 +39,7 @@ import {
   getBudgetByMonth,
   BUDGET_CATEGORIES,
 } from '../../services/budgetService';
-import { exportAsCSV, exportAsPDF } from '../../services/exportService';
+import { exportAsCSV, exportAsPDF } from '../../../src/utils/exportUtils';
 import ScrollableTopTabBar from '../../../src/screens/Budget/components/ScrollableTopBar';
 
 const { width } = Dimensions.get('window');
@@ -69,13 +69,16 @@ const BOTTOM_NAV_HEIGHT = 90;
 const formatMoney = (n) => `R${Math.round(n || 0).toLocaleString('en-ZA')}`;
 
 const formatAmountInput = (value) => {
-  const numeric = value.replace(/[^0-9]/g, '');
+  if (!value) return '';
+  const numeric = String(value).replace(/[^0-9]/g, '');
   if (!numeric) return '';
   return parseInt(numeric, 10).toLocaleString('en-ZA');
 };
 
-const parseAmount = (formatted) =>
-  parseInt((formatted || '').replace(/,/g, ''), 10) || 0;
+const parseAmount = (formatted) => {
+  if (!formatted) return 0;
+  return parseInt(String(formatted).replace(/,/g, ''), 10) || 0;
+};
 
 const friendlyDate = (d) => {
   const today     = new Date();
@@ -89,8 +92,10 @@ const friendlyDate = (d) => {
 };
 
 const groupByDate = (expenses) => {
+  if (!expenses || expenses.length === 0) return [];
   const map = {};
   expenses.forEach((e) => {
+    if (!e || !e.date) return;
     const key = new Date(e.date).toDateString();
     if (!map[key]) map[key] = [];
     map[key].push(e);
@@ -112,7 +117,7 @@ function SearchFilterBar({ searchQuery, onSearchChange, filter, onFilterChange }
         <Ionicons name="search-outline" size={15} color={COLORS.muted} />
         <TextInput
           style={styles.searchInput}
-          value={searchQuery}
+          value={searchQuery || ''}
           onChangeText={onSearchChange}
           placeholder="Search expenses..."
           placeholderTextColor={COLORS.muted}
@@ -156,15 +161,15 @@ function SwipeableExpenseItem({ item, isEditing, onDelete, onEdit, onSave, onCan
   const [editNote,   setEditNote]   = useState('');
   const [saving,     setSaving]     = useState(false);
 
-  const cat = BUDGET_CATEGORIES.find(c => c.id === item.category);
+  const cat = BUDGET_CATEGORIES.find(c => c.id === item?.category);
   const displayColor = categoryColor || cat?.color || COLORS.accent;
 
   useEffect(() => {
-    if (isEditing) {
-      setEditAmount(item.amount.toLocaleString('en-ZA'));
+    if (isEditing && item) {
+      setEditAmount((item.amount || 0).toLocaleString('en-ZA'));
       setEditNote(item.note || '');
     }
-  }, [isEditing]);
+  }, [isEditing, item]);
 
   const closeSwipe = useCallback(() => {
     Animated.spring(translateX, {
@@ -202,6 +207,7 @@ function SwipeableExpenseItem({ item, isEditing, onDelete, onEdit, onSave, onCan
   ).current;
 
   const handleDeletePress = () => {
+    if (!item) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     Alert.alert(
       'Delete Expense',
@@ -232,13 +238,16 @@ function SwipeableExpenseItem({ item, isEditing, onDelete, onEdit, onSave, onCan
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
     }
+    if (!item) return;
     setSaving(true);
     try {
-      await onSave(item, { amount: newAmount, note: editNote.trim(), category: item.category });
+      await onSave(item, { amount: newAmount, note: (editNote || '').trim(), category: item.category });
     } finally {
       setSaving(false);
     }
   };
+
+  if (!item) return null;
 
   return (
     <Animated.View
@@ -338,9 +347,9 @@ function SwipeableExpenseItem({ item, isEditing, onDelete, onEdit, onSave, onCan
               </View>
               <View style={styles.expenseMetaRow}>
                 <Text style={styles.expenseTime}>
-                  {new Date(item.date).toLocaleTimeString('en-ZA', {
+                  {item.date ? new Date(item.date).toLocaleTimeString('en-ZA', {
                     hour: '2-digit', minute: '2-digit',
-                  })}
+                  }) : ''}
                 </Text>
                 {cat && (
                   <Text style={styles.expenseCategoryLabel}>{cat.name}</Text>
@@ -363,13 +372,13 @@ function SwipeableExpenseItem({ item, isEditing, onDelete, onEdit, onSave, onCan
 
 // ─── SummaryBar ───────────────────────────────────────────────────────────────
 function SummaryBar({ category, spent, budgeted, count, isAllCategories, month }) {
-  const progress  = budgeted > 0 ? Math.min(spent / budgeted, 1) : 0;
-  const remaining = Math.abs(budgeted - spent);
-  const isOver    = spent > budgeted;
+  const progress  = budgeted > 0 ? Math.min((spent || 0) / budgeted, 1) : 0;
+  const remaining = Math.abs((budgeted || 0) - (spent || 0));
+  const isOver    = (spent || 0) > (budgeted || 0);
   const barColor  = isOver ? COLORS.negative : progress > 0.8 ? COLORS.warning : (category?.color || COLORS.positive);
   const progressPercent = `${Math.min(progress * 100, 100)}%`;
 
-  const monthLabel = new Date(month + '-01').toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' });
+  const monthLabel = month ? new Date(month + '-01').toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' }) : '';
 
   return (
     <View style={styles.summaryBar}>
@@ -381,7 +390,7 @@ function SummaryBar({ category, spent, budgeted, count, isAllCategories, month }
               {isAllCategories ? 'All Expenses' : category?.name || 'Category'}
             </Text>
             <Text style={styles.summaryCount}>
-              {monthLabel} · {count} expense{count !== 1 ? 's' : ''}
+              {monthLabel} · {count || 0} expense{(count || 0) !== 1 ? 's' : ''}
             </Text>
           </View>
         </View>
@@ -448,7 +457,7 @@ function UndoSnackbar({ visible, onUndo, onDismiss, bottomInset }) {
   if (!visible) return null;
 
   return (
-    <Animated.View style={[styles.snackbar, { opacity, bottom: bottomInset + BOTTOM_NAV_HEIGHT + 12 }]}>
+    <Animated.View style={[styles.snackbar, { opacity, bottom: (bottomInset || 0) + BOTTOM_NAV_HEIGHT + 12 }]}>
       <Text style={styles.snackbarText}>Expense deleted</Text>
       <Pressable onPress={onUndo}>
         <Text style={styles.snackbarUndo}>Undo</Text>
@@ -459,7 +468,7 @@ function UndoSnackbar({ visible, onUndo, onDismiss, bottomInset }) {
 
 // ─── Export Modal ─────────────────────────────────────────────────────────────
 function ExportModal({ visible, onClose, onExportCSV, onExportPDF, loading, expenses, categoryName, month }) {
-  const monthLabel = new Date(month + '-01').toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' });
+  const monthLabel = month ? new Date(month + '-01').toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' }) : '';
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -468,7 +477,7 @@ function ExportModal({ visible, onClose, onExportCSV, onExportPDF, loading, expe
           <View style={styles.exportHandle} />
           <Text style={styles.exportTitle}>Export Report</Text>
           <Text style={styles.exportSubtitle}>
-            {expenses.length} expense{expenses.length !== 1 ? 's' : ''} · {categoryName} · {monthLabel}
+            {(expenses || []).length} expense{(expenses || []).length !== 1 ? 's' : ''} · {categoryName} · {monthLabel}
           </Text>
 
           <Pressable
@@ -522,7 +531,7 @@ function ExportModal({ visible, onClose, onExportCSV, onExportPDF, loading, expe
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ExpenseDetailScreen({ route, navigation }) {
-  const { categoryId, categoryName } = route.params;
+  const { categoryId, categoryName } = route.params || {};
   const insets = useSafeAreaInsets();
 
   const [expenses,        setExpenses]        = useState([]);
@@ -543,6 +552,10 @@ export default function ExpenseDetailScreen({ route, navigation }) {
   const category = isAllCategories ? null : BUDGET_CATEGORIES.find((c) => c.id === categoryId);
 
   const loadData = useCallback(async () => {
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
     try {
       let expData;
       if (isAllCategories) {
@@ -553,10 +566,11 @@ export default function ExpenseDetailScreen({ route, navigation }) {
       
       const budgetData = await getBudgetByMonth(userId, currentMonth);
       
-      setExpenses(expData || []);
+      setExpenses(Array.isArray(expData) ? expData : []);
       setBudget(budgetData);
     } catch (e) {
       console.error('ExpenseDetailScreen loadData:', e);
+      setExpenses([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -567,22 +581,34 @@ export default function ExpenseDetailScreen({ route, navigation }) {
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
   const filteredExpenses = useMemo(() => {
-    let result = expenses;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(e => (e.note || '').toLowerCase().includes(q));
+    let result = Array.isArray(expenses) ? [...expenses] : [];
+    
+    if (searchQuery && String(searchQuery).trim()) {
+      const q = String(searchQuery).toLowerCase().trim();
+      result = result.filter(e => {
+        const note = e && e.note ? String(e.note).toLowerCase() : '';
+        return note.includes(q);
+      });
     }
+    
     if (filter === 'Over R100') {
-      result = result.filter(e => e.amount > 100);
+      result = result.filter(e => (e && e.amount ? e.amount : 0) > 100);
     } else if (filter === 'This Week') {
       const now = new Date();
       const weekAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
-      result = result.filter(e => new Date(e.date) >= weekAgo);
+      result = result.filter(e => {
+        if (!e || !e.date) return false;
+        const expenseDate = new Date(e.date);
+        return !isNaN(expenseDate.getTime()) && expenseDate >= weekAgo;
+      });
     }
+    
     return result;
   }, [expenses, searchQuery, filter]);
 
   const handleDelete = useCallback(async (expense) => {
+    if (!expense || !expense.id) return;
+    
     setDeletedExpense(expense);
     setShowSnackbar(true);
     setExpenses((prev) => prev.filter((e) => e.id !== expense.id));
@@ -605,10 +631,18 @@ export default function ExpenseDetailScreen({ route, navigation }) {
   }, [deletedExpense]);
 
   const handleSave = useCallback(async (original, updates) => {
+    if (!original || !original.id) return;
+    
     try {
-      await updateExpense(userId, original.id, updates);
+      const safeUpdates = {
+        amount: updates?.amount || original.amount || 0,
+        note: updates?.note ? String(updates.note).trim() : '',
+        category: updates?.category || original.category,
+      };
+      
+      await updateExpense(userId, original.id, safeUpdates);
       setExpenses((prev) =>
-        prev.map((e) => (e.id === original.id ? { ...e, ...updates } : e))
+        prev.map((e) => (e.id === original.id ? { ...e, ...safeUpdates } : e))
       );
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setEditingId(null);
@@ -618,11 +652,15 @@ export default function ExpenseDetailScreen({ route, navigation }) {
     }
   }, [userId]);
 
-  // ── Export CSV using exportService ──
   const handleExportCSV = useCallback(async () => {
     setExporting(true);
     try {
-      await exportAsCSV(filteredExpenses, categoryName);
+      if (!filteredExpenses || filteredExpenses.length === 0) {
+        Alert.alert('No Data', 'There are no expenses to export.');
+        setShowExportModal(false);
+        return;
+      }
+      await exportAsCSV(filteredExpenses, categoryName || 'Expenses');
       setShowExportModal(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
@@ -633,11 +671,15 @@ export default function ExpenseDetailScreen({ route, navigation }) {
     }
   }, [filteredExpenses, categoryName]);
 
-  // ── Export PDF using exportService ──
   const handleExportPDF = useCallback(async () => {
     setExporting(true);
     try {
-      await exportAsPDF(filteredExpenses, categoryName, budget, categoryId);
+      if (!filteredExpenses || filteredExpenses.length === 0) {
+        Alert.alert('No Data', 'There are no expenses to export.');
+        setShowExportModal(false);
+        return;
+      }
+      await exportAsPDF(filteredExpenses, categoryName || 'Expenses', budget || {}, categoryId);
       setShowExportModal(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
@@ -650,7 +692,7 @@ export default function ExpenseDetailScreen({ route, navigation }) {
 
   const sections = useMemo(() => groupByDate(filteredExpenses), [filteredExpenses]);
   
-  const totalSpent = filteredExpenses.reduce((s, e) => s + (e.amount || 0), 0);
+  const totalSpent = (filteredExpenses || []).reduce((s, e) => s + (e && e.amount ? e.amount : 0), 0);
   const totalBudgeted = isAllCategories 
     ? (budget?.totalBudget || 0)
     : (budget?.categories?.[categoryId]?.budgeted || 0);
@@ -658,7 +700,7 @@ export default function ExpenseDetailScreen({ route, navigation }) {
   const renderItem = useCallback(({ item }) => (
     <SwipeableExpenseItem
       item={item}
-      isEditing={editingId === item.id}
+      isEditing={editingId === item?.id}
       onDelete={handleDelete}
       onEdit={(id) => setEditingId((prev) => (prev === id ? null : id))}
       onSave={handleSave}
@@ -669,8 +711,8 @@ export default function ExpenseDetailScreen({ route, navigation }) {
 
   const renderSectionHeader = useCallback(({ section }) => (
     <View style={styles.sectionHeader}>
-      <Text style={styles.sectionDate}>{section.title}</Text>
-      <Text style={styles.sectionTotal}>{formatMoney(section.sectionTotal)}</Text>
+      <Text style={styles.sectionDate}>{section?.title || ''}</Text>
+      <Text style={styles.sectionTotal}>{formatMoney(section?.sectionTotal || 0)}</Text>
     </View>
   ), []);
 
@@ -689,7 +731,6 @@ export default function ExpenseDetailScreen({ route, navigation }) {
     <View style={[styles.flex, { backgroundColor: COLORS.background }]}>
       <StatusBar style="dark" />
 
-      {/* ── Header with Tab Bar ── */}
       <View style={{ backgroundColor: COLORS.background }}>
         <View style={{ paddingTop: insets.top }}>
           <ScrollableTopTabBar
@@ -704,7 +745,6 @@ export default function ExpenseDetailScreen({ route, navigation }) {
           />
         </View>
 
-        {/* Category Header Row */}
         <View style={styles.navHeader}>
           <Pressable
             style={styles.backBtn}
@@ -715,22 +755,21 @@ export default function ExpenseDetailScreen({ route, navigation }) {
           >
             <Ionicons name="chevron-back" size={20} color={COLORS.text} />
           </Pressable>
-          <Text style={styles.navTitle}>{categoryName}</Text>
+          <Text style={styles.navTitle}>{categoryName || 'Expenses'}</Text>
           <Pressable
-            style={[styles.exportBtn, filteredExpenses.length === 0 && { opacity: 0.3 }]}
+            style={[styles.exportBtn, (!filteredExpenses || filteredExpenses.length === 0) && { opacity: 0.3 }]}
             onPress={() => {
-              if (filteredExpenses.length === 0) return;
+              if (!filteredExpenses || filteredExpenses.length === 0) return;
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               setShowExportModal(true);
             }}
-            disabled={filteredExpenses.length === 0}
+            disabled={!filteredExpenses || filteredExpenses.length === 0}
           >
             <Ionicons name="share-outline" size={18} color="#FFF" />
           </Pressable>
         </View>
       </View>
 
-      {/* ── Search & Filter ── */}
       <SearchFilterBar
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
@@ -744,7 +783,7 @@ export default function ExpenseDetailScreen({ route, navigation }) {
       >
         <SectionList
           sections={sections}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => item?.id || Math.random().toString()}
           renderItem={renderItem}
           renderSectionHeader={renderSectionHeader}
           stickySectionHeadersEnabled={false}
@@ -758,7 +797,7 @@ export default function ExpenseDetailScreen({ route, navigation }) {
               category={category}
               spent={totalSpent}
               budgeted={totalBudgeted}
-              count={filteredExpenses.length}
+              count={(filteredExpenses || []).length}
               isAllCategories={isAllCategories}
               month={currentMonth}
             />
@@ -770,7 +809,7 @@ export default function ExpenseDetailScreen({ route, navigation }) {
               <Text style={styles.emptySubtitle}>
                 {searchQuery || filter !== 'All'
                   ? 'Try adjusting your search or filters'
-                  : `Your ${categoryName} expenses will appear here`}
+                  : `Your ${categoryName || 'expenses'} will appear here`}
               </Text>
             </View>
           }
@@ -779,7 +818,6 @@ export default function ExpenseDetailScreen({ route, navigation }) {
         />
       </KeyboardAvoidingView>
 
-      {/* ── Undo Snackbar ── */}
       <UndoSnackbar
         visible={showSnackbar}
         onUndo={handleUndo}
@@ -787,7 +825,6 @@ export default function ExpenseDetailScreen({ route, navigation }) {
         bottomInset={insets.bottom}
       />
 
-      {/* ── Export Modal ── */}
       <ExportModal
         visible={showExportModal}
         onClose={() => { if (!exporting) setShowExportModal(false); }}
@@ -795,7 +832,7 @@ export default function ExpenseDetailScreen({ route, navigation }) {
         onExportPDF={handleExportPDF}
         loading={exporting}
         expenses={filteredExpenses}
-        categoryName={categoryName}
+        categoryName={categoryName || 'Expenses'}
         month={currentMonth}
       />
     </View>
@@ -812,7 +849,6 @@ const styles = StyleSheet.create({
     fontSize: 14, fontFamily: FONTS.semiBold, color: COLORS.muted,
   },
 
-  // ── Nav Header ──
   navHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -838,7 +874,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15, shadowRadius: 4, elevation: 2,
   },
 
-  // ── Search & Filter ──
   searchFilterContainer: {
     paddingHorizontal: 16,
     marginBottom: 8,
@@ -881,7 +916,6 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
   },
 
-  // ── Summary Bar ──
   summaryBar: { marginHorizontal: 16, marginBottom: 10, marginTop: 4 },
   summaryCard: {
     backgroundColor: COLORS.surface,
@@ -919,7 +953,6 @@ const styles = StyleSheet.create({
     color: COLORS.negative, textAlign: 'center',
   },
 
-  // ── Section List ──
   listContent: { paddingTop: 4 },
   sectionHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -928,7 +961,6 @@ const styles = StyleSheet.create({
   sectionDate: { fontSize: 13, fontFamily: FONTS.bold, color: COLORS.text },
   sectionTotal: { fontSize: 13, fontFamily: FONTS.semiBold, color: COLORS.muted },
 
-  // ── Swipeable Item ──
   swipeWrapper: { marginHorizontal: 16, position: 'relative' },
   deleteReveal: {
     position: 'absolute', right: 4, top: 0, bottom: 0,
@@ -964,7 +996,6 @@ const styles = StyleSheet.create({
   editHintRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   editHint: { fontSize: 9, fontFamily: FONTS.semiBold, color: COLORS.muted },
 
-  // ── Edit Form ──
   editForm: { padding: 14, gap: 10 },
   editAmountRow: { flexDirection: 'row', alignItems: 'flex-end', paddingBottom: 6 },
   editCurrencyPrefix: {
@@ -994,7 +1025,6 @@ const styles = StyleSheet.create({
   saveBtnGradient: { alignItems: 'center', justifyContent: 'center', paddingVertical: 12 },
   saveBtnText: { fontSize: 14, fontFamily: FONTS.bold, color: '#FFF' },
 
-  // ── Empty State ──
   emptyState: {
     alignItems: 'center', justifyContent: 'center',
     paddingVertical: 50, paddingHorizontal: 40, gap: 10,
@@ -1005,7 +1035,6 @@ const styles = StyleSheet.create({
     textAlign: 'center', lineHeight: 20,
   },
 
-  // ── Snackbar ──
   snackbar: {
     position: 'absolute', left: 20, right: 20,
     backgroundColor: COLORS.accent, borderRadius: 14,
@@ -1017,7 +1046,6 @@ const styles = StyleSheet.create({
   snackbarText: { fontSize: 14, fontFamily: FONTS.semiBold, color: '#FFF' },
   snackbarUndo: { fontSize: 14, fontFamily: FONTS.bold, color: COLORS.positive },
 
-  // ── Export Modal ──
   modalOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end',
   },
