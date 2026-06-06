@@ -282,7 +282,7 @@ export default function BottomTabs() {
         }}
       />
       <Tab.Screen 
-        name="ExpenseDetail" 
+        name="ExpenseDetailScreen" 
         component={ExpenseDetailScreen}
         options={{
           tabBarButton: () => null, // Hide from tab bar

@@ -26,7 +26,7 @@ export default function BudgetStack() {
       <Stack.Screen name="BudgetSetupWizard" component={BudgetSetupWizard} />
       
       {/* Expense Details */}
-      <Stack.Screen name="ExpenseDetail" component={ExpenseDetailScreen} />
+      <Stack.Screen name="ExpenseDetailScreen" component={ExpenseDetailScreen} />
       
       {/* AI Advisor */}
       <Stack.Screen name="AIAdvisor" component={AIAdvisorScreen} />
