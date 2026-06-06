@@ -527,7 +527,7 @@ export default function BudgetScreen() {
         onTabPress={(tab) => {
           if (tab === 'Expenses') {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            navigation.navigate('ExpenseDetail', {
+            navigation.navigate('ExpenseDetailScreen', {
               categoryId: 'all',
               categoryName: 'All Expenses',
             });
@@ -725,7 +725,7 @@ export default function BudgetScreen() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Recent Expenses</Text>
-              <Pressable onPress={() => navigation.navigate('ExpenseDetail', {
+              <Pressable onPress={() => navigation.navigate('ExpenseDetailScreen', {
                 categoryId: 'all',
                 categoryName: 'All Expenses',
               })}>
@@ -766,7 +766,7 @@ export default function BudgetScreen() {
                   item={item}
                   onPress={() => {
                     Haptics.selectionAsync();
-                    navigation.navigate('ExpenseDetail', {
+                    navigation.navigate('ExpenseDetailScreen', {
                       categoryId:   item.id,
                       categoryName: item.name,
                     });
