@@ -33,8 +33,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "548cbe6f-ceda-49ab-9239-8e75285e9dd5"
+        "projectId": "543b71f3-6804-44d8-b5f2-81ef671708fa"
       }
-    }
+    },
+    "owner": "mamosa_motsie"
   }
 }
